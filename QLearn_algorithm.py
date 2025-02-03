@@ -117,14 +117,12 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         # Preprocessing.alignTo (0=training, 1=target)
         # Preprocessing.NODATA (int) - how to treat NODATA / INVALID DATA values as QgsAlignRaster has issues
 
-        # Suggested Improvements:
-        # Detect rasters that can't be aligned (non-matching extent)
-
         # Fetch Input Parameters from Dict
         training_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TRAIN, context)
         target_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TARGET, context)
         output_training = self.parameterAsOutputLayer(parameters, self.OUTPUT_TRAIN, context)
         output_target = self.parameterAsOutputLayer(parameters, self.OUTPUT_TARGET, context)
+
         
         # Align input and training rasters and save outputs in memory
         success, align_output_training, align_output_target = QLearnAlgorithm.alignRasters(training_raster,target_raster,context,feedback)
@@ -132,11 +130,15 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
             feedback.pushInfo("Error: Cannot Align Rasters")
             return {}
         
-        # Save to disk
-        output_training = align_output_training
-        output_target = align_output_target
+        # Save to output location
+        Utils.setRasterDestination(align_output_training, output_training, feedback, context)
+        Utils.setRasterDestination(align_output_target, output_target, feedback, context)
 
         return {self.OUTPUT_TARGET: output_target, self.OUTPUT_TRAIN: output_training}
+    
+    @staticmethod # Implement
+    def remove_NODATA(ras: QgsRasterLayer) -> QgsRasterLayer:
+        return ras
     
     @staticmethod
     def alignRasters(
@@ -157,12 +159,12 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         success = alignRaster.checkInputParameters()
         if(not success):
             feedback.pushInfo(alignRaster.errorMessage())
-            return False
+            return False, None, None
         
         success = alignRaster.run()
         if(not success):
             feedback.pushInfo(alignRaster.errorMessage())
-            return False
+            return False, None, None
         
         aligned_training = QgsRasterLayer("memory:align_training", "Aligned Training Raster")
         aligned_target = QgsRasterLayer("memory:align_target", "Aligned Target Raster")

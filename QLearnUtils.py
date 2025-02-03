@@ -1,13 +1,22 @@
-from qgis.core import QgsRasterLayer, QgsRasterPipe, QgsProcessingFeedback, QgsRasterFileWriter
+from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingContext
+from qgis import processing
 
 class Utils:
     @staticmethod
-    def saveRasterToDisk(ras: QgsRasterLayer, filename: str, feedback: QgsProcessingFeedback) -> bool:
-        if(not ras.isValid()):
-            feedback.pushInfo("Error: Cannot save raster to disk - Raster is not valid")
-            return False
-        pipe = QgsRasterPipe()
-        pipe.set(ras.dataProvider().clone())
-        file_writer = QgsRasterFileWriter(filename)
-        result = file_writer.writeRaster(pipe, ras.width(), ras.height(), ras.extent(), ras.crs())
-        return True
+    # Source: https://gis.stackexchange.com/questions/416616/feed-an-existing-raster-to-qgis-raster-destination-parameter-in-qgis-processing
+    def setRasterDestination(ras: QgsRasterLayer, filename: str, feedback: QgsProcessingFeedback, context: QgsProcessingContext) -> bool:
+        alg1_params = {'INPUT': ras,
+                        'TARGET_CRS':None,
+                        'NODATA':None,
+                        'COPY_SUBDATASETS':False,
+                        'OPTIONS':'',
+                        'EXTRA':'',
+                        'DATA_TYPE':0,
+                        'OUTPUT':filename}
+        
+        processing.run("gdal:translate",
+                alg1_params,
+                is_child_algorithm=True,
+                context=context,
+                feedback=feedback)
+        
