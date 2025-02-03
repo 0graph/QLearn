@@ -1,4 +1,4 @@
-from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingContext
+from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingContext, Qgis
 from qgis import processing
 
 class QUtils:
@@ -19,4 +19,5 @@ class QUtils:
                 is_child_algorithm=True,
                 context=context,
                 feedback=feedback)
+        
         

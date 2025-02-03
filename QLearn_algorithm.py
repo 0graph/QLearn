@@ -31,12 +31,15 @@ __copyright__ = '(C) 2025 by Adam Bialecki'
 __revision__ = '$Format:%H$'
 
 from qgis.PyQt.QtCore import QCoreApplication
-from qgis.core import (QgsProcessingAlgorithm,
+from qgis.core import (QgsProcessing,
+                       QgsProcessingAlgorithm,
                        QgsProcessingParameterRasterLayer,
-                       QgsProcessingParameterRasterDestination)
+                       QgsProcessingParameterRasterDestination,
+                       QgsProcessingParameterMultipleLayers)
 
 from .QLearnUtils import QUtils
 from .QLearnPreprocessing import QPreprocessing
+from .QLearnDataset import QDataset
 
 
 class QLearnAlgorithm(QgsProcessingAlgorithm):
@@ -68,36 +71,20 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         with some other properties.
         """
 
-        # Input Training Raster
+        # Input Training Rasters
         self.addParameter(
-            QgsProcessingParameterRasterLayer(
+            QgsProcessingParameterMultipleLayers(
             self.INPUT_TRAIN,
-            self.tr("Input raster"))
+            self.tr("Input rasters"),
+            layerType=QgsProcessing.SourceType.TypeRaster)
         )
 
-        # Input Target Raster
+        # Input Target Rasters
         self.addParameter(
-            QgsProcessingParameterRasterLayer(
+            QgsProcessingParameterMultipleLayers(
             self.INPUT_TARGET,
-            self.tr("Target raster"))
-        )
-
-        # Output Preprocessed Raster
-        self.addParameter(
-            QgsProcessingParameterRasterDestination(
-                self.OUTPUT_TRAIN,
-                self.tr('Output Training layer'),
-                defaultValue="aligned_train.tif"
-            )
-        )
-
-        # Output Preprocessed Raster
-        self.addParameter(
-            QgsProcessingParameterRasterDestination(
-                self.OUTPUT_TARGET,
-                self.tr('Output Target layer'),
-                defaultValue="aligned_target.tif"
-            )
+            self.tr("Target rasters"),
+            layerType=QgsProcessing.SourceType.TypeRaster)
         )
 
     def processAlgorithm(self, parameters, context, feedback):
@@ -109,24 +96,13 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         # Preprocessing.NODATA (int) - how to treat NODATA / INVALID DATA values as QgsAlignRaster has issues
 
         # Fetch Input Parameters from Dict
-        training_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TRAIN, context)
-        target_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TARGET, context)
-        output_training = self.parameterAsOutputLayer(parameters, self.OUTPUT_TRAIN, context)
-        output_target = self.parameterAsOutputLayer(parameters, self.OUTPUT_TARGET, context)
+        training_rasters = self.parameterAsLayerList(parameters, self.INPUT_TRAIN, context)
+        target_rasters = self.parameterAsLayerList(parameters, self.INPUT_TARGET, context)
 
-        QPreprocessor = QPreprocessing(context,feedback)
-        
-        # Align input and training rasters and save outputs in memory
-        success, align_output_training, align_output_target = QPreprocessor.alignRasters(training_raster,target_raster)
-        if(not success):
-            feedback.pushInfo("Error: Cannot Align Rasters")
-            return {}
-        
-        # Save to output location
-        QUtils.setRasterDestination(align_output_training, output_training, feedback, context)
-        QUtils.setRasterDestination(align_output_target, output_target, feedback, context)
+        dataset = QDataset(training_rasters, target_rasters,context,feedback)
+        feedback.pushInfo(f"Size: {dataset.__len__()}")
 
-        return {self.OUTPUT_TARGET: output_target, self.OUTPUT_TRAIN: output_training}
+        return {}
 
 
     def name(self):
