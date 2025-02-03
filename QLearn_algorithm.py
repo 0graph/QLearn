@@ -101,6 +101,12 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
 
         dataset = QDataset(training_rasters, target_rasters,context,feedback)
         feedback.pushInfo(f"Size: {dataset.__len__()}")
+        feedback.pushInfo(f"Chunks: {dataset.chunk_indices}")
+        feedback.pushInfo(f"Aligned Rasters: {dataset.aligned_rasters}")
+        raster_idx, chX, chY = dataset.chunk_indices[0]
+        chunk_data = dataset.read_chunk(dataset.aligned_rasters[raster_idx][0], chX, chY)
+        feedback.pushInfo(f"Chunk Data: {chunk_data}")
+        feedback.pushInfo(f"Chunk Shape: {chunk_data.shape.__str__()}")
 
         return {}
 

@@ -106,12 +106,12 @@ class QDataset(Dataset):
 
         # Iterate over each band and extract chunk
         for b in range(1, self.bands + 1):
-            block: QgsRasterBlock = provider.block(b, chunkBounds)
+            block: QgsRasterBlock = provider.block(b, chunkBounds, xSize, ySize)
             if not block:
                 self.feedback.pushInfo(f"ERROR: Failed to read block for band {b}")
                 continue
-            
-            block_data = np.array(block.data(), dtype=np.int16).reshape((ySize, xSize))
+            block.ty
+            block_data = np.frombuffer(block.data(), dtype=np.int16).reshape((ySize, xSize))
 
             if block_data is None:
                 self.feedback.pushInfo(f"Error: Failed to convert block data for band {b}")
