@@ -38,9 +38,14 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterFeatureSink,
                        QgsProcessingParameterRasterLayer,
                        QgsProcessingParameterRasterDestination,
-                       QgsProcessingParameterMultipleLayers)
+                       QgsProcessingParameterMultipleLayers,
+                       QgsRasterLayer,
+                       QgsProcessingContext,
+                       QgsProcessingFeedback)
 
 from qgis.analysis import (QgsAlignRaster)
+
+from .QLearnUtils import Utils
 
 
 class QLearnAlgorithm(QgsProcessingAlgorithm):
@@ -109,67 +114,65 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         Here is where the processing itself takes place.
         """
         # Suggested Arguments:
-        # AlignToCellsize smallest/largest
+        # Preprocessing.alignTo (0=training, 1=target)
+        # Preprocessing.NODATA (int) - how to treat NODATA / INVALID DATA values as QgsAlignRaster has issues
 
-        feedback.pushInfo("Fetching Parameters...")
+        # Suggested Improvements:
+        # Detect rasters that can't be aligned (non-matching extent)
+
+        # Fetch Input Parameters from Dict
         training_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TRAIN, context)
         target_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TARGET, context)
         output_training = self.parameterAsOutputLayer(parameters, self.OUTPUT_TRAIN, context)
         output_target = self.parameterAsOutputLayer(parameters, self.OUTPUT_TARGET, context)
         
-        feedback.pushInfo("Processing Rasters...")
+        # Align input and training rasters and save outputs in memory
+        success, align_output_training, align_output_target = QLearnAlgorithm.alignRasters(training_raster,target_raster,context,feedback)
+        if(not success):
+            feedback.pushInfo("Error: Cannot Align Rasters")
+            return {}
+        
+        # Save to disk
+        output_training = align_output_training
+        output_target = align_output_target
 
-        for ras in [training_raster, target_raster]:
-            feedback.pushInfo(f"CRS: {ras.crs()}")
-            feedback.pushInfo(f"Extent: {ras.extent()}")
-            feedback.pushInfo(f"Valid: {ras.isValid()}")
-            feedback.pushInfo(f"Source: {ras.source()}")
-            feedback.pushInfo(f"Width: {ras.width()}")
-            feedback.pushInfo(f"Height: {ras.height()}")
-            feedback.pushInfo(f"Cellsize: {ras.rasterUnitsPerPixelX()},{ras.rasterUnitsPerPixelY}")
+        return {self.OUTPUT_TARGET: output_target, self.OUTPUT_TRAIN: output_training}
+    
+    @staticmethod
+    def alignRasters(
+            training_raster: QgsRasterLayer, 
+            target_raster: QgsRasterLayer,
+            context: QgsProcessingContext, 
+            feedback: QgsProcessingFeedback) -> tuple[bool,QgsRasterLayer,QgsRasterLayer]:
         
-        
-        # Setup Raster Alignment
         alignRaster = QgsAlignRaster()
-        
         rasters_to_align = [
-            QgsAlignRaster.Item(target_raster.source(),output_target),
-            QgsAlignRaster.Item(training_raster.source(),output_training)
+            QgsAlignRaster.Item(target_raster.source(),"memory:align_training"),
+            QgsAlignRaster.Item(training_raster.source(),"memory:align_target")
             ]
 
         alignRaster.setRasters(rasters_to_align)
-        idx = alignRaster.suggestedReferenceLayer()
-        if(idx is -1):
-            feedback.pushInfo("Error: Raster Alignment Error")
-            feedback.pushInfo(alignRaster.errorMessage())
-            return {}
-        print(f"Suggested Raster: {rasters_to_align[idx].inputFilename}")
-        
         alignRaster.setParametersFromRaster(QgsAlignRaster.RasterInfo(training_raster.source()))
 
         success = alignRaster.checkInputParameters()
         if(not success):
-            feedback.pushInfo("Error: Raster Alignment Error")
             feedback.pushInfo(alignRaster.errorMessage())
-            return {}
+            return False
         
-        # Debug
-        feedback.pushInfo(f"Extent: {alignRaster.alignedRasterExtent()}")
-        feedback.pushInfo(f"Size: {alignRaster.alignedRasterSize()}")
-        feedback.pushInfo(f"Cellsize: {alignRaster.cellSize()}")
-        feedback.pushInfo(f"Clip Extent: {alignRaster.clipExtent()}")
-        feedback.pushInfo(f"Rasters to Align: {alignRaster.rasters()}")
-        feedback.pushInfo(f"Destination CRS: {alignRaster.destinationCrs()}")
-
         success = alignRaster.run()
         if(not success):
-            feedback.pushInfo("Error: Raster Alignment Error")
             feedback.pushInfo(alignRaster.errorMessage())
-            return {}
+            return False
         
-        feedback.pushInfo(f"Alignment successful!")
+        aligned_training = QgsRasterLayer("memory:align_training", "Aligned Training Raster")
+        aligned_target = QgsRasterLayer("memory:align_target", "Aligned Target Raster")
 
-        return {self.OUTPUT_TARGET: output_target, self.OUTPUT_TRAIN: output_training}
+        if not aligned_training.isValid() or not aligned_target.isValid():
+            feedback.reportError("Error: Failed to load aligned rasters.")
+            return False, None, None
+        
+        return True, aligned_training, aligned_target
+
 
     def name(self):
         """
