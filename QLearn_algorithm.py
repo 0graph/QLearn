@@ -61,7 +61,8 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
     # used when calling the algorithm from another algorithm, or when
     # calling from the QGIS console.
 
-    OUTPUT = 'OUTPUT_RASTER'
+    OUTPUT_TRAIN = 'OUTPUT_TRAINING_RASTER'
+    OUTPUT_TARGET = 'OUTPUT_TARGET_RASTER'
     INPUT_TRAIN = 'INPUT_TRAINING_RASTER'
     INPUT_TARGET = 'INPUT_TARGET_RASTER'
 
@@ -88,8 +89,18 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         # Output Preprocessed Raster
         self.addParameter(
             QgsProcessingParameterRasterDestination(
-                self.OUTPUT,
-                self.tr('Output layer')
+                self.OUTPUT_TRAIN,
+                self.tr('Output layer'),
+                defaultValue="aligned_train.tif"
+            )
+        )
+
+        # Output Preprocessed Raster
+        self.addParameter(
+            QgsProcessingParameterRasterDestination(
+                self.OUTPUT_TARGET,
+                self.tr('Output layer'),
+                defaultValue="aligned_target.tif"
             )
         )
 
@@ -97,36 +108,68 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         """
         Here is where the processing itself takes place.
         """
-        feedback.pushInfo("Fetching Parameters...")
-        training_raster = self.parameterAsRasterLayer(
-            parameters,
-            self.INPUT_TRAIN,
-            context
-        )
+        # Suggested Arguments:
+        # AlignToCellsize smallest/largest
 
-        target_raster = self.parameterAsRasterLayer(
-            parameters,
-            self.INPUT_TRAIN,
-            context
-        )
+        feedback.pushInfo("Fetching Parameters...")
+        training_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TRAIN, context)
+        target_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TARGET, context)
+        output_training = self.parameterAsOutputLayer(parameters, self.OUTPUT_TRAIN, context)
+        output_target = self.parameterAsOutputLayer(parameters, self.OUTPUT_TARGET, context)
         
         feedback.pushInfo("Processing Rasters...")
+
+        for ras in [training_raster, target_raster]:
+            feedback.pushInfo(f"CRS: {ras.crs()}")
+            feedback.pushInfo(f"Extent: {ras.extent()}")
+            feedback.pushInfo(f"Valid: {ras.isValid()}")
+            feedback.pushInfo(f"Source: {ras.source()}")
+            feedback.pushInfo(f"Width: {ras.width()}")
+            feedback.pushInfo(f"Height: {ras.height()}")
+            feedback.pushInfo(f"Cellsize: {ras.rasterUnitsPerPixelX()},{ras.rasterUnitsPerPixelY}")
+        
         
         # Setup Raster Alignment
         alignRaster = QgsAlignRaster()
-        alignRaster.setRasters([QgsAlignRaster.Item(target_raster.source(),target_raster.source())])
-        success = alignRaster.setParametersFromRaster(training_raster.source())
+        
+        rasters_to_align = [
+            QgsAlignRaster.Item(target_raster.source(),output_target),
+            QgsAlignRaster.Item(training_raster.source(),output_training)
+            ]
+
+        alignRaster.setRasters(rasters_to_align)
+        idx = alignRaster.suggestedReferenceLayer()
+        if(idx is -1):
+            feedback.pushInfo("Error: Raster Alignment Error")
+            feedback.pushInfo(alignRaster.errorMessage())
+            return {}
+        print(f"Suggested Raster: {rasters_to_align[idx].inputFilename}")
+        
+        alignRaster.setParametersFromRaster(QgsAlignRaster.RasterInfo(training_raster.source()))
+
+        success = alignRaster.checkInputParameters()
         if(not success):
-           feedback.pushInfo("Error: Unable to set parameters from raster")
+            feedback.pushInfo("Error: Raster Alignment Error")
+            feedback.pushInfo(alignRaster.errorMessage())
+            return {}
+        
         # Debug
         feedback.pushInfo(f"Extent: {alignRaster.alignedRasterExtent()}")
         feedback.pushInfo(f"Size: {alignRaster.alignedRasterSize()}")
         feedback.pushInfo(f"Cellsize: {alignRaster.cellSize()}")
         feedback.pushInfo(f"Clip Extent: {alignRaster.clipExtent()}")
         feedback.pushInfo(f"Rasters to Align: {alignRaster.rasters()}")
-        alignRaster.run()
+        feedback.pushInfo(f"Destination CRS: {alignRaster.destinationCrs()}")
 
-        return {}
+        success = alignRaster.run()
+        if(not success):
+            feedback.pushInfo("Error: Raster Alignment Error")
+            feedback.pushInfo(alignRaster.errorMessage())
+            return {}
+        
+        feedback.pushInfo(f"Alignment successful!")
+
+        return {self.OUTPUT_TARGET: output_target, self.OUTPUT_TRAIN: output_training}
 
     def name(self):
         """
