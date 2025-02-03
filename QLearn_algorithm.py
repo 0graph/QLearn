@@ -86,7 +86,7 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterRasterDestination(
                 self.OUTPUT_TRAIN,
-                self.tr('Output layer'),
+                self.tr('Output Training layer'),
                 defaultValue="aligned_train.tif"
             )
         )
@@ -95,7 +95,7 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterRasterDestination(
                 self.OUTPUT_TARGET,
-                self.tr('Output layer'),
+                self.tr('Output Target layer'),
                 defaultValue="aligned_target.tif"
             )
         )
@@ -114,9 +114,10 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         output_training = self.parameterAsOutputLayer(parameters, self.OUTPUT_TRAIN, context)
         output_target = self.parameterAsOutputLayer(parameters, self.OUTPUT_TARGET, context)
 
+        QPreprocessor = QPreprocessing(context,feedback)
         
         # Align input and training rasters and save outputs in memory
-        success, align_output_training, align_output_target = QPreprocessing.alignRasters(training_raster,target_raster,context,feedback)
+        success, align_output_training, align_output_target = QPreprocessor.alignRasters(training_raster,target_raster)
         if(not success):
             feedback.pushInfo("Error: Cannot Align Rasters")
             return {}
@@ -160,7 +161,7 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Training Neural Network Model'
+        return 'Training'
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
