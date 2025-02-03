@@ -35,7 +35,7 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessingParameterRasterLayer,
                        QgsProcessingParameterRasterDestination)
 
-from .QLearnUtils import Utils
+from .QLearnUtils import QUtils
 from .QLearnPreprocessing import QPreprocessing
 
 
@@ -122,11 +122,10 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
             return {}
         
         # Save to output location
-        Utils.setRasterDestination(align_output_training, output_training, feedback, context)
-        Utils.setRasterDestination(align_output_target, output_target, feedback, context)
+        QUtils.setRasterDestination(align_output_training, output_training, feedback, context)
+        QUtils.setRasterDestination(align_output_target, output_target, feedback, context)
 
         return {self.OUTPUT_TARGET: output_target, self.OUTPUT_TRAIN: output_training}
-    
 
 
     def name(self):
