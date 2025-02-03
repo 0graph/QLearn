@@ -33,13 +33,13 @@ class QPreprocessing:
         mem_training = "memory:training_raster"
         mem_target = "memory:target_raster"
 
-        #self.replace_NODATA(training_raster, mem_training)
-        #self.replace_NODATA(target_raster, mem_target)
+        self.replace_NODATA(training_raster, mem_training)
+        self.replace_NODATA(target_raster, mem_target)
 
         alignRaster = QgsAlignRaster()
         rasters_to_align = [ # Creates in memory rasters for alignment
-            QgsAlignRaster.Item(target_raster,mem_target),
-            QgsAlignRaster.Item(training_raster,mem_training)
+            QgsAlignRaster.Item(target_raster.source(),mem_target),
+            QgsAlignRaster.Item(training_raster.source(),mem_training)
             ]
 
         alignRaster.setRasters(rasters_to_align)
@@ -58,8 +58,8 @@ class QPreprocessing:
             self.feedback.pushInfo(alignRaster.errorMessage())
             return False, None, None
         
-        aligned_training = QgsRasterLayer("memory:align_training", "Aligned Training Raster")
-        aligned_target = QgsRasterLayer("memory:align_target", "Aligned Target Raster")
+        aligned_training = QgsRasterLayer(mem_training, "Aligned Training Raster")
+        aligned_target = QgsRasterLayer(mem_target, "Aligned Target Raster")
 
         if not aligned_training.isValid() or not aligned_target.isValid():
             self.feedback.reportError("Error: Failed to load aligned rasters.")
