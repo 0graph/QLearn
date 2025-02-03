@@ -1,7 +1,7 @@
 from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingContext
 from qgis import processing
 
-class Utils:
+class QUtils:
     @staticmethod
     # Source: https://gis.stackexchange.com/questions/416616/feed-an-existing-raster-to-qgis-raster-destination-parameter-in-qgis-processing
     def setRasterDestination(ras: QgsRasterLayer, filename: str, feedback: QgsProcessingFeedback, context: QgsProcessingContext) -> bool:

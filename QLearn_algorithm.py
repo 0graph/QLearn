@@ -31,21 +31,12 @@ __copyright__ = '(C) 2025 by Adam Bialecki'
 __revision__ = '$Format:%H$'
 
 from qgis.PyQt.QtCore import QCoreApplication
-from qgis.core import (QgsProcessing,
-                       QgsFeatureSink,
-                       QgsProcessingAlgorithm,
-                       QgsProcessingParameterFeatureSource,
-                       QgsProcessingParameterFeatureSink,
+from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessingParameterRasterLayer,
-                       QgsProcessingParameterRasterDestination,
-                       QgsProcessingParameterMultipleLayers,
-                       QgsRasterLayer,
-                       QgsProcessingContext,
-                       QgsProcessingFeedback)
-
-from qgis.analysis import (QgsAlignRaster)
+                       QgsProcessingParameterRasterDestination)
 
 from .QLearnUtils import Utils
+from .QLearnPreprocessing import QPreprocessing
 
 
 class QLearnAlgorithm(QgsProcessingAlgorithm):
@@ -125,7 +116,7 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
 
         
         # Align input and training rasters and save outputs in memory
-        success, align_output_training, align_output_target = QLearnAlgorithm.alignRasters(training_raster,target_raster,context,feedback)
+        success, align_output_training, align_output_target = QPreprocessing.alignRasters(training_raster,target_raster,context,feedback)
         if(not success):
             feedback.pushInfo("Error: Cannot Align Rasters")
             return {}
@@ -136,44 +127,6 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
 
         return {self.OUTPUT_TARGET: output_target, self.OUTPUT_TRAIN: output_training}
     
-    @staticmethod # Implement
-    def remove_NODATA(ras: QgsRasterLayer) -> QgsRasterLayer:
-        return ras
-    
-    @staticmethod
-    def alignRasters(
-            training_raster: QgsRasterLayer, 
-            target_raster: QgsRasterLayer,
-            context: QgsProcessingContext, 
-            feedback: QgsProcessingFeedback) -> tuple[bool,QgsRasterLayer,QgsRasterLayer]:
-        
-        alignRaster = QgsAlignRaster()
-        rasters_to_align = [
-            QgsAlignRaster.Item(target_raster.source(),"memory:align_training"),
-            QgsAlignRaster.Item(training_raster.source(),"memory:align_target")
-            ]
-
-        alignRaster.setRasters(rasters_to_align)
-        alignRaster.setParametersFromRaster(QgsAlignRaster.RasterInfo(training_raster.source()))
-
-        success = alignRaster.checkInputParameters()
-        if(not success):
-            feedback.pushInfo(alignRaster.errorMessage())
-            return False, None, None
-        
-        success = alignRaster.run()
-        if(not success):
-            feedback.pushInfo(alignRaster.errorMessage())
-            return False, None, None
-        
-        aligned_training = QgsRasterLayer("memory:align_training", "Aligned Training Raster")
-        aligned_target = QgsRasterLayer("memory:align_target", "Aligned Target Raster")
-
-        if not aligned_training.isValid() or not aligned_target.isValid():
-            feedback.reportError("Error: Failed to load aligned rasters.")
-            return False, None, None
-        
-        return True, aligned_training, aligned_target
 
 
     def name(self):
