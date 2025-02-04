@@ -16,6 +16,7 @@ class QDataset(Dataset):
                  context: QgsProcessingContext,
                  feedback: QgsProcessingFeedback,
                  args: dict = dict()):
+        
         self.training_rasters = training_rasters
         self.target_rasters = target_rasters
         self.context = context
@@ -24,34 +25,34 @@ class QDataset(Dataset):
         self.chunk_indices = []                                     # Indices of each chunk for each raster in aligned_rasters
         self.aligned_rasters = []                                   # The list of aligned raster filenames
         self.chunkSize = args.get("CHUNK_SIZE",256)                 # Split Images into Chunks of this size
-        
+        self.dataType = args.get("DATA_TYPE",Qgis.DataType.UInt16)  # Data Type Default: UInt16, Will be used to convert training data to correct datatype
+        self.NODATA = args.get("NODATA",-1)                         # NoData Value for rasters
         self.bands = args.get("BANDS",999)                          # Calculated from each training raster, will use the lowest value. 
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
 
-        self.dataType = args.get("DATA_TYPE",Qgis.DataType.UInt16)  # Data Type Default: UInt16, Will be used to convert training data to correct datatype
-        self.NODATA = args.get("NODATA",-1)                         # NoData Value for rasters
+        
 
         if(len(training_rasters) != len(target_rasters)):
-            self.feedback.pushInfo("Error: Length of Input Rasters and Target Rasters does not match")
+            self.feedback.pushWarning("Error: Length of Input Rasters and Target Rasters does not match")
             return
         
         # Align each pair of rasters and save it to a temporary file if valid
         for i,(train_ras, targ_ras) in enumerate(zip(training_rasters, target_rasters)):
+            self.feedback.pushInfo(f"Raster Set {i}: [Training: {train_ras.name()},Target: {targ_ras.name()}] Bands: {train_ras.bandCount()}")
+
             success, train_ras_align, targ_ras_align = self.preprocessor.alignRasters(train_ras, targ_ras)
-            if(not success):
-                self.feedback.pushInfo(f"Error: Could not align rasters {train_ras.name(),targ_ras.name()}")
+
+            if(not success or targ_ras_align.bandCount() > 1):
+                self.feedback.pushWarning(f"Error: Could not align rasters {train_ras.name(),targ_ras.name()}")
             else:
                 self.bands = min(self.bands, train_ras.bandCount()) # Set band count to lowest of any raster in list
+                
                 # Save to file so rasters dont exceeed memory capacity
                 training_aligned_filename = QgsProcessingUtils.generateTempFilename(f"training_aligned_{i}.tif")
                 target_aligned_filename = QgsProcessingUtils.generateTempFilename(f"target_aligned_{i}.tif")
-
                 QUtils.setRasterDestination(train_ras_align, training_aligned_filename,self.feedback,self.context)
                 QUtils.setRasterDestination(targ_ras_align,target_aligned_filename,self.feedback,self.context)
-
-                self.feedback.pushInfo(f"Raster Destination: {training_aligned_filename}")
-
                 self.aligned_rasters.append((training_aligned_filename, target_aligned_filename))
 
         # Calculate total number of chunks across all rasters to be used by PyTorch DataLoader
@@ -64,10 +65,10 @@ class QDataset(Dataset):
         return len(self.chunk_indices)
 
     def __getitem__(self, idx):
+        # Get Chunks
         raster_idx, chX, chY = self.chunk_indices[idx]
-
         train_filename, target_filename = self.aligned_rasters[raster_idx]
-
+        # Get Chunk Data
         training_chunk = self.read_chunk(train_filename, chX, chY)
         target_chunk = self.read_chunk(target_filename, chX, chY)
 
@@ -80,7 +81,7 @@ class QDataset(Dataset):
         data = np.full((self.bands, self.chunkSize, self.chunkSize), self.NODATA, dtype=np.float32)
 
         if not raster.isValid():
-            self.feedback.pushInfo(f"ERROR: Issue Reading Raster {ras_filename}")
+            self.feedback.pushWarning(f"ERROR: Issue Reading Raster {ras_filename}")
             return data  # Return empty chunk filled with NODATA
         
         provider = raster.dataProvider()
@@ -108,7 +109,11 @@ class QDataset(Dataset):
                 self.feedback.pushInfo(f"ERROR: Failed to read block for band {b}")
                 continue
             
-            block_data = np.frombuffer(block.data(), dtype=QUtils.dt2np(block.dataType())).reshape((ySize, xSize))
+            # NumPy Copy Array From Buffer As the block's datatype
+            block_data = np.frombuffer(
+                block.data(), 
+                dtype=QUtils.QDataType2NumpPy(block.dataType())
+            ).reshape((ySize, xSize))
 
             if block_data is None:
                 self.feedback.pushInfo(f"Error: Failed to convert block data for band {b}")
@@ -118,11 +123,3 @@ class QDataset(Dataset):
             data[b - 1, :ySize, :xSize] = block_data
 
         return data
-
-
-
-
-
-
-        
-

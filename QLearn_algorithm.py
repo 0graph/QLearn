@@ -99,7 +99,10 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         training_rasters = self.parameterAsLayerList(parameters, self.INPUT_TRAIN, context)
         target_rasters = self.parameterAsLayerList(parameters, self.INPUT_TARGET, context)
 
+        # Setup Dataset
         dataset = QDataset(training_rasters, target_rasters,context,feedback)
+
+        # DEBUG
         feedback.pushInfo(f"Size: {dataset.__len__()}")
         feedback.pushInfo(f"Chunks: {dataset.chunk_indices}")
         feedback.pushInfo(f"Aligned Rasters: {dataset.aligned_rasters}")

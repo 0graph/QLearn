@@ -67,8 +67,9 @@ class QPreprocessing:
         width = ras.width()
         height = ras.height()
 
-        chunksX = width // self.chunkSize
-        chunksY = height // self.chunkSize
+        # +1 to Account for partial chunks
+        chunksX = (width // self.chunkSize) + 1 
+        chunksY = (height // self.chunkSize) + 1
         return chunksX, chunksY
 
     # Generates augmented raster images to enhance training
