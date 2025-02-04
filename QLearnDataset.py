@@ -29,11 +29,8 @@ class QDataset(Dataset):
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
 
-        self.dataType = Qgis.DataType(args.get("DATA_TYPE",2))      # Data Type Default: UInt16, Will be used to convert training data to correct datatype
+        self.dataType = args.get("DATA_TYPE",Qgis.DataType.UInt16)  # Data Type Default: UInt16, Will be used to convert training data to correct datatype
         self.NODATA = args.get("NODATA",-1)                         # NoData Value for rasters
-
-        Qgis.DataType
-
 
         if(len(training_rasters) != len(target_rasters)):
             self.feedback.pushInfo("Error: Length of Input Rasters and Target Rasters does not match")
@@ -110,8 +107,8 @@ class QDataset(Dataset):
             if not block:
                 self.feedback.pushInfo(f"ERROR: Failed to read block for band {b}")
                 continue
-            block.ty
-            block_data = np.frombuffer(block.data(), dtype=np.int16).reshape((ySize, xSize))
+            
+            block_data = np.frombuffer(block.data(), dtype=QUtils.dt2np(block.dataType())).reshape((ySize, xSize))
 
             if block_data is None:
                 self.feedback.pushInfo(f"Error: Failed to convert block data for band {b}")
