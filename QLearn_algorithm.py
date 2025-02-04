@@ -31,7 +31,8 @@ __copyright__ = '(C) 2025 by Adam Bialecki'
 __revision__ = '$Format:%H$'
 
 from qgis.PyQt.QtCore import QCoreApplication
-from qgis.core import (QgsProcessing,
+from qgis.core import (Qgis,
+                       QgsProcessing,
                        QgsProcessingAlgorithm,
                        QgsProcessingParameterRasterLayer,
                        QgsProcessingParameterRasterDestination,
@@ -98,6 +99,13 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         # Fetch Input Parameters from Dict
         training_rasters = self.parameterAsLayerList(parameters, self.INPUT_TRAIN, context)
         target_rasters = self.parameterAsLayerList(parameters, self.INPUT_TARGET, context)
+
+        args = {
+            "CHUNK_SIZE": 64,
+            "NODATA": -1.0,
+            "BANDS": 8,
+            "DATA_TYPE": Qgis.DataType.Float64
+        }
 
         # Setup Dataset
         dataset = QDataset(training_rasters, target_rasters,context,feedback)

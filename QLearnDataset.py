@@ -108,12 +108,27 @@ class QDataset(Dataset):
             if not block:
                 self.feedback.pushInfo(f"ERROR: Failed to read block for band {b}")
                 continue
+
             
+
+            NoDataVal = None
+            if(block.hasNoDataValue()):
+                NoDataVal = block.noDataValue()
+            self.feedback.pushInfo(f"Block ({b},{chX},{chY}): W:[{block.width()}] H:[{block.height()}] NODATA:[{NoDataVal}]")
+            
+            # Set Block's Datatype
+            if(not block.convert(self.dataType)):
+                self.feedback.pushWarning(f"Error: Could not convert block's DataType")
             # NumPy Copy Array From Buffer As the block's datatype
             block_data = np.frombuffer(
                 block.data(), 
                 dtype=QUtils.QDataType2NumpPy(block.dataType())
             ).reshape((ySize, xSize))
+
+            # Convert NoData to Correct Format
+            def cvNoData(i):
+                i = self.NODATA if i is NoDataVal else i
+            cvNoData(block_data)
 
             if block_data is None:
                 self.feedback.pushInfo(f"Error: Failed to convert block data for band {b}")
