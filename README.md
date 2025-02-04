@@ -9,10 +9,16 @@ A QGIS Plugin allowing for neural network model training and prediction using th
 
 #### Issues
 - `QLearnDataset`
-  - Dosent take datatype of rasters into account -> all rasters need to be converted to same datatype in read_chunk to be used correctly in pytorch
-    - I think this is causing issues with np.frombuffer
+  - NoData values are not being set/converted for rasters
+  - All input rasters must be converted to same data type
+  - All target rasters must be converted to same data type
 - `QLearnPreprocessing`
   - Dosent generate chunks covering the entire image
   - Dosent deal with error values in rasters
 - `QLearn_algorithm`
   - Dosent have an easy interface for selecting a pair of input and targets rasters, just two seperate lists
+
+
+#### Testing
+- `Partial Chunks:` Do partial chunks contain correct data and nodata values in proper spot in returned array from read_chunk in *QLearnDataset*
+- `Multiband 
