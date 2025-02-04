@@ -21,19 +21,4 @@ class QUtils:
                 context=context,
                 feedback=feedback)
         
-    # Map Qgis DataTypes to NumPy Data Types
-    QgisDataType_to_NumPyDataType = {
-        Qgis.DataType.Byte: np.byte,
-        Qgis.DataType.Float32: np.float32,
-        Qgis.DataType.Float64: np.float64,
-        Qgis.DataType.UInt16: np.uint16,
-        Qgis.DataType.UInt32: np.uint32,
-        Qgis.DataType.Int16: np.int16,
-        Qgis.DataType.Int32: np.int32,
-        Qgis.DataType.UnknownDataType: None
-    }
-
-    # Data Type 2 NumPy
-    def QDataType2NumpPy(dataType: Qgis.DataType):
-        return QUtils.QgisDataType_to_NumPyDataType.get(dataType, None)
         

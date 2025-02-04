@@ -2,6 +2,9 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
+import numpy.ma as ma
+
+from qgis.core import _raster_block_as_numpy
 
 from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsProcessingUtils, QgsRasterDataProvider, QgsRectangle, QgsRasterBlock, Qgis
 from .QLearnPreprocessing import QPreprocessing
@@ -25,7 +28,6 @@ class QDataset(Dataset):
         self.chunk_indices = []                                     # Indices of each chunk for each raster in aligned_rasters
         self.aligned_rasters = []                                   # The list of aligned raster filenames
         self.chunkSize = args.get("CHUNK_SIZE",256)                 # Split Images into Chunks of this size
-        self.dataType = args.get("DATA_TYPE",Qgis.DataType.UInt16)  # Data Type Default: UInt16, Will be used to convert training data to correct datatype
         self.NODATA = args.get("NODATA",-1)                         # NoData Value for rasters
         self.bands = args.get("BANDS",999)                          # Calculated from each training raster, will use the lowest value. 
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
@@ -72,35 +74,32 @@ class QDataset(Dataset):
         training_chunk = self.read_chunk(train_filename, chX, chY)
         target_chunk = self.read_chunk(target_filename, chX, chY)
 
-        return torch.tensor(training_chunk), torch.tensor(target_chunk)
+        return torch.tensor(training_chunk, dtype=np.float64), torch.tensor(target_chunk, dtype=np.float64)
 
     def read_chunk(self, ras_filename: str, chX: int, chY: int) -> np.ndarray:
         raster = QgsRasterLayer(ras_filename)
         
         # Initialize a 3D array with the NODATA value
-        data = np.full((self.bands, self.chunkSize, self.chunkSize), self.NODATA, dtype=np.float32)
+        data = np.full((self.bands, self.chunkSize, self.chunkSize), self.NODATA, dtype=np.float64)
 
         if not raster.isValid():
             self.feedback.pushWarning(f"ERROR: Issue Reading Raster {ras_filename}")
             return data  # Return empty chunk filled with NODATA
         
-        provider = raster.dataProvider()
-
+        
         # Calculate chunk boundaries
-        width = raster.width()
-        height = raster.height()
+        provider = raster.dataProvider()
         xOffset = chX * self.chunkSize
         yOffset = chY * self.chunkSize
-        xSize = min(self.chunkSize, width - xOffset)
-        ySize = min(self.chunkSize, height - yOffset)
-        extent = raster.extent()
-
-        chunkBounds = QgsRectangle(
-            extent.xMinimum() + xOffset,
-            extent.yMinimum() + yOffset,
-            extent.xMinimum() + xOffset + xSize,
-            extent.yMinimum() + yOffset + ySize
-        )
+        xRes = raster.rasterUnitsPerPixelX()
+        yRes = abs(raster.rasterUnitsPerPixelY())
+        xSize = min(self.chunkSize, provider.xSize() - xOffset)
+        ySize = min(self.chunkSize, abs(provider.ySize()) - yOffset)
+        x_min = raster.extent().xMinimum() + xOffset * xRes
+        y_max = raster.extent().yMaximum() - yOffset * yRes
+        x_max = x_min + xSize * xRes
+        y_min = y_max - ySize * yRes
+        chunkBounds = QgsRectangle(x_min, y_min, x_max, y_max)
 
         # Iterate over each band and extract chunk
         for b in range(1, self.bands + 1):
@@ -108,33 +107,25 @@ class QDataset(Dataset):
             if not block:
                 self.feedback.pushInfo(f"ERROR: Failed to read block for band {b}")
                 continue
-
-            
-
-            NoDataVal = None
-            if(block.hasNoDataValue()):
-                NoDataVal = block.noDataValue()
-            self.feedback.pushInfo(f"Block ({b},{chX},{chY}): W:[{block.width()}] H:[{block.height()}] NODATA:[{NoDataVal}]")
             
             # Set Block's Datatype
-            if(not block.convert(self.dataType)):
+            if(not block.convert(Qgis.DataType.Float64)):
                 self.feedback.pushWarning(f"Error: Could not convert block's DataType")
-            # NumPy Copy Array From Buffer As the block's datatype
-            block_data = np.frombuffer(
-                block.data(), 
-                dtype=QUtils.QDataType2NumpPy(block.dataType())
-            ).reshape((ySize, xSize))
 
-            # Convert NoData to Correct Format
-            def cvNoData(i):
-                i = self.NODATA if i is NoDataVal else i
-            cvNoData(block_data)
-
-            if block_data is None:
-                self.feedback.pushInfo(f"Error: Failed to convert block data for band {b}")
+            # NumPy create a masked numpy array from the block
+            m_block = block.as_numpy(use_masking = True)
+            if m_block is None:
+                self.feedback.pushWarning("Failed to convert block to numpy array")
                 continue
 
+            NoDataVal = block.noDataValue() if block.hasNoDataValue() else None
+            if NoDataVal is not None:
+                m_block = np.where(m_block == NoDataVal, self.NODATA, m_block)  # Replace NODATA Values
+            m_block = np.nan_to_num(m_block, nan=self.NODATA)                   # Replace Invalid Values
+            m_block = ma.filled(m_block, self.NODATA)
+            
+            self.feedback.pushInfo(f"Block ({b},{chX},{chY}): W:[{block.width()}] H:[{block.height()}] NODATA:[{NoDataVal}] SHP:[{m_block.shape.__str__()}]")
             # Assign block data to the correct slice of the data array
-            data[b - 1, :ySize, :xSize] = block_data
+            data[b - 1, :ySize, :xSize] = m_block
 
         return data

@@ -41,6 +41,7 @@ from qgis.core import (Qgis,
 from .QLearnUtils import QUtils
 from .QLearnPreprocessing import QPreprocessing
 from .QLearnDataset import QDataset
+import numpy as np
 
 
 class QLearnAlgorithm(QgsProcessingAlgorithm):
@@ -103,8 +104,7 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         args = {
             "CHUNK_SIZE": 64,
             "NODATA": -1.0,
-            "BANDS": 8,
-            "DATA_TYPE": Qgis.DataType.Float64
+            "BANDS": 8
         }
 
         # Setup Dataset
@@ -116,7 +116,7 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         feedback.pushInfo(f"Aligned Rasters: {dataset.aligned_rasters}")
         raster_idx, chX, chY = dataset.chunk_indices[0]
         chunk_data = dataset.read_chunk(dataset.aligned_rasters[raster_idx][0], chX, chY)
-        feedback.pushInfo(f"Chunk Data: {chunk_data}")
+        feedback.pushInfo(f"Chunk Data: {chunk_data.tolist()}")
         feedback.pushInfo(f"Chunk Shape: {chunk_data.shape.__str__()}")
 
         return {}
