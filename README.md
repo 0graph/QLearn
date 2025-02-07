@@ -5,7 +5,7 @@ A QGIS Plugin allowing for neural network model training and prediction using th
 - PyTorch
   - Close QGIS and open an administrator command prompt
   - Navigate to the QGIS Python Folder
-  - Run `C:\Program Files\YourQGISFolder\apps\Python39> .\Scripts\pip.exe install --target .\Lib\site-packages\ torch`
+  - Run `C:\Program Files\YourQGISFolder\apps\PythonVersion> .\Scripts\pip.exe install --target .\Lib\site-packages\ torch`
 
 #### Issues
 - `QLearnDataset`

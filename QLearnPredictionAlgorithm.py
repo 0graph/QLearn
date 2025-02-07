@@ -36,15 +36,20 @@ from qgis.core import (Qgis,
                        QgsProcessingAlgorithm,
                        QgsProcessingParameterRasterLayer,
                        QgsProcessingParameterRasterDestination,
-                       QgsProcessingParameterMultipleLayers)
+                       QgsProcessingParameterMultipleLayers,
+                       QgsProcessingParameterFileDestination,
+                       QgsProcessingParameterFile)
 
-from .QLearnUtils import QUtils
-from .QLearnPreprocessing import QPreprocessing
-from .QLearnDataset import QDataset
-import numpy as np
+from .QLearnPredict import QNNPredictor
+import torch
+import traceback
 
 
-class QLearnAlgorithm(QgsProcessingAlgorithm):
+class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
+    
+    def flags(self):
+        return super().flags() | Qgis.ProcessingAlgorithmFlag.NoThreading
+    
     """
     This is an example algorithm that takes a vector layer and
     creates a new identical one.
@@ -62,10 +67,9 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
     # used when calling the algorithm from another algorithm, or when
     # calling from the QGIS console.
 
-    OUTPUT_TRAIN = 'OUTPUT_TRAINING_RASTER'
-    OUTPUT_TARGET = 'OUTPUT_TARGET_RASTER'
-    INPUT_TRAIN = 'INPUT_TRAINING_RASTER'
-    INPUT_TARGET = 'INPUT_TARGET_RASTER'
+    INPUT_MODEL = 'INPUT_MODEL'
+    INPUT_RASTER = 'INPUT_RASTER'
+    OUTPUT_RASTER = 'OUTPUT_PREDICTED_RASTER'
 
     def initAlgorithm(self, config):
         """
@@ -73,53 +77,49 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         with some other properties.
         """
 
-        # Input Training Rasters
+        # Input Rasters for prediction
         self.addParameter(
-            QgsProcessingParameterMultipleLayers(
-            self.INPUT_TRAIN,
-            self.tr("Input rasters"),
-            layerType=QgsProcessing.SourceType.TypeRaster)
+            QgsProcessingParameterRasterLayer(
+                self.INPUT_RASTER,
+                self.tr("Input Raster")
+            )
         )
 
-        # Input Target Rasters
+        # Input Model to predict with
         self.addParameter(
-            QgsProcessingParameterMultipleLayers(
-            self.INPUT_TARGET,
-            self.tr("Target rasters"),
-            layerType=QgsProcessing.SourceType.TypeRaster)
+            QgsProcessingParameterFile(
+            self.INPUT_MODEL,
+            self.tr("PyTorch Model"))
+        )
+
+        # Output predicted raster
+        self.addParameter(
+            QgsProcessingParameterRasterDestination(
+                self.OUTPUT_RASTER,
+                self.tr("Output Predicted Raster")
+            )
         )
 
     def processAlgorithm(self, parameters, context, feedback):
         """
         Here is where the processing itself takes place.
         """
-        # Suggested Arguments:
-        # Preprocessing.alignTo (0=training, 1=target)
-        # Preprocessing.NODATA (int) - how to treat NODATA / INVALID DATA values as QgsAlignRaster has issues
+        
+        iRaster = self.parameterAsRasterLayer(parameters, self.INPUT_RASTER, context)
+        iModel = self.parameterAsFile(parameters,self.INPUT_MODEL,context)
+        oRaster = self.parameterAsFileOutput(parameters,self.OUTPUT_RASTER,context)
 
-        # Fetch Input Parameters from Dict
-        training_rasters = self.parameterAsLayerList(parameters, self.INPUT_TRAIN, context)
-        target_rasters = self.parameterAsLayerList(parameters, self.INPUT_TARGET, context)
 
         args = {
-            "CHUNK_SIZE": 64,
-            "NODATA": -1.0,
-            "BANDS": 8
+            
         }
 
-        # Setup Dataset
-        dataset = QDataset(training_rasters, target_rasters,context,feedback)
-
-        # DEBUG
-        feedback.pushInfo(f"Size: {dataset.__len__()}")
-        feedback.pushInfo(f"Chunks: {dataset.chunk_indices}")
-        feedback.pushInfo(f"Aligned Rasters: {dataset.aligned_rasters}")
-        raster_idx, chX, chY = dataset.chunk_indices[0]
-        chunk_data = dataset.read_chunk(dataset.aligned_rasters[raster_idx][0], chX, chY)
-        feedback.pushInfo(f"Chunk Data: {chunk_data.tolist()}")
-        feedback.pushInfo(f"Chunk Shape: {chunk_data.shape.__str__()}")
-
-        return {}
+        feedback.pushInfo(f"Args: {args}")
+        
+        predictor = QNNPredictor(iModel,256,context,feedback,args)
+        predictor.predict(iRaster)
+        
+        return {self.OUTPUT_RASTER: oRaster}
 
 
     def name(self):
@@ -130,7 +130,7 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'QLearnTrain'
+        return 'QLearnPredict'
 
     def displayName(self):
         """
@@ -154,10 +154,10 @@ class QLearnAlgorithm(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Training'
+        return 'Prediction'
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
 
     def createInstance(self):
-        return QLearnAlgorithm()
+        return QLearnPredictionAlgorithm()

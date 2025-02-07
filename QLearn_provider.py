@@ -31,7 +31,8 @@ __copyright__ = '(C) 2025 by Adam Bialecki'
 __revision__ = '$Format:%H$'
 
 from qgis.core import QgsProcessingProvider
-from .QLearn_algorithm import QLearnAlgorithm
+from .QLearnTrainingAlgorithm import QLearnTrainingAlgorithm
+from .QLearnPredictionAlgorithm import QLearnPredictionAlgorithm
 
 
 class QLearnProvider(QgsProcessingProvider):
@@ -53,9 +54,8 @@ class QLearnProvider(QgsProcessingProvider):
         """
         Loads all algorithms belonging to this provider.
         """
-        self.addAlgorithm(QLearnAlgorithm())
-        # add additional algorithms here
-        # self.addAlgorithm(MyOtherAlgorithm())
+        self.addAlgorithm(QLearnTrainingAlgorithm())
+        self.addAlgorithm(QLearnPredictionAlgorithm())
 
     def id(self):
         """

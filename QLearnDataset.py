@@ -1,11 +1,8 @@
 
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import numpy as np
 import numpy.ma as ma
-
-from qgis.core import _raster_block_as_numpy
-
 from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsProcessingUtils, QgsRasterDataProvider, QgsRectangle, QgsRasterBlock, Qgis
 from .QLearnPreprocessing import QPreprocessing
 from .QLearnUtils import QUtils
@@ -32,8 +29,6 @@ class QDataset(Dataset):
         self.bands = args.get("BANDS",999)                          # Calculated from each training raster, will use the lowest value. 
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
-
-        
 
         if(len(training_rasters) != len(target_rasters)):
             self.feedback.pushWarning("Error: Length of Input Rasters and Target Rasters does not match")
@@ -73,8 +68,11 @@ class QDataset(Dataset):
         # Get Chunk Data
         training_chunk = self.read_chunk(train_filename, chX, chY)
         target_chunk = self.read_chunk(target_filename, chX, chY)
+        # Create Tensors
+        training_tensor = torch.tensor(training_chunk, dtype=torch.float32)
+        target_tensor = torch.tensor(target_chunk, dtype=torch.float32)
 
-        return torch.tensor(training_chunk, dtype=np.float64), torch.tensor(target_chunk, dtype=np.float64)
+        return training_tensor, target_tensor
 
     def read_chunk(self, ras_filename: str, chX: int, chY: int) -> np.ndarray:
         raster = QgsRasterLayer(ras_filename)
@@ -124,7 +122,7 @@ class QDataset(Dataset):
             m_block = np.nan_to_num(m_block, nan=self.NODATA)                   # Replace Invalid Values
             m_block = ma.filled(m_block, self.NODATA)
             
-            self.feedback.pushInfo(f"Block ({b},{chX},{chY}): W:[{block.width()}] H:[{block.height()}] NODATA:[{NoDataVal}] SHP:[{m_block.shape.__str__()}]")
+            # self.feedback.pushInfo(f"Block ({b},{chX},{chY}): W:[{block.width()}] H:[{block.height()}] NODATA:[{NoDataVal}] SHP:[{m_block.shape.__str__()}]")
             # Assign block data to the correct slice of the data array
             data[b - 1, :ySize, :xSize] = m_block
 
