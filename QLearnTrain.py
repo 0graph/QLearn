@@ -12,7 +12,7 @@ class QUNetTrainer:
     def __init__(self, dataset: QDataset, output_loc: str, feedback: QgsProcessingFeedback, args: dict = dict()):
         self.dataset = dataset                                          # Dataset used for DataLoader
         self.device = args.get("DEVICE", torch.device("cpu"))           # CPU or GPU
-        self.n_classes = 1                                              # Number of output classes, this should be determined automatically from the target dataset
+        self.n_classes = args.get("N_CLASSES", 1)                       # Number of output classes, this should be determined automatically from the target dataset
         self.task = args.get("TRAIN_TYPE", "regression")                # regression or classification
         self.model: QUNet = QUNet(                                      # UNet Model Init
             in_channels=dataset.bands,                                  # Number of bands in input image
@@ -44,6 +44,7 @@ class QUNetTrainer:
         pass
 
     def train(self):
+        self.feedback.pushInfo(f"Training Started. {self.epochs} epochs, {self.dataset.__len__()} chunks")
         self.model.train()
         for epoch in range(self.epochs):
             epoch_loss = 0.0
@@ -53,6 +54,7 @@ class QUNetTrainer:
 
                 outputs = self.model(img_chunk)
                 
+                self.feedback.pushInfo(f"BEFORERESIZE Output shape: {outputs.shape}, Target shape: {targ_chunk.shape}")
                 
                 if self.task == "classification":   # (CrossEntropyLoss)
                     targ_chunk = targ_chunk.long()  # Convert to Class labels
@@ -62,6 +64,9 @@ class QUNetTrainer:
 
                 if targ_chunk.ndim == 4 and targ_chunk.shape[1] == 1:
                     targ_chunk = targ_chunk.squeeze(1)     
+
+                self.feedback.pushInfo(f"AFTERRESIZE Output shape: {outputs.shape}, Target shape: {targ_chunk.shape}")
+
                 loss = self.criterion(outputs, targ_chunk)  # Compute loss without masking
 
                 self.optimizer.zero_grad()
@@ -83,4 +88,4 @@ class QUNetTrainer:
 
     def save_model(self):
         self.feedback.pushInfo(f"Saved model to {self.model_output_location}")
-        torch.save(self.model.st, self.model_output_location)
+        torch.save(self.model, self.model_output_location)

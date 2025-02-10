@@ -35,7 +35,8 @@ from qgis.core import (Qgis,
                        QgsProcessing,
                        QgsProcessingAlgorithm,
                        QgsProcessingParameterMultipleLayers,
-                       QgsProcessingParameterFileDestination)
+                       QgsProcessingParameterFileDestination,
+                       QgsProcessingParameterNumber)
 
 from .QLearnDataset import QDataset
 from .QLearnTrain import QUNetTrainer
@@ -68,6 +69,8 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     OUTPUT_MODEL = 'OUTPUT_MODEL'
     INPUT_TRAIN = 'INPUT_TRAINING_RASTER'
     INPUT_TARGET = 'INPUT_TARGET_RASTER'
+    INPUT_CLASSES = 'INPUT_CLASSES'
+    ARGS_EPOCHS = 'ARGS_EPOCH'
 
     def initAlgorithm(self, config):
         """
@@ -91,12 +94,30 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             layerType=QgsProcessing.SourceType.TypeRaster)
         )
 
+        
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.INPUT_CLASSES,
+                self.tr("Number of Classes"),
+                defaultValue=1
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.ARGS_EPOCHS,
+                self.tr("Number of Epochs"),
+                defaultValue=10
+            )
+        )
+
         self.addParameter(
             QgsProcessingParameterFileDestination(
                 self.OUTPUT_MODEL,
                 self.tr("Output model location")
             )
         )
+
 
     def processAlgorithm(self, parameters, context, feedback):
         """
@@ -107,7 +128,8 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         training_rasters = self.parameterAsLayerList(parameters, self.INPUT_TRAIN, context)
         target_rasters = self.parameterAsLayerList(parameters, self.INPUT_TARGET, context)
         model_save_loc = self.parameterAsFileOutput(parameters, self.OUTPUT_MODEL, context)
-
+        n_classes = self.parameterAsInt(parameters,self.INPUT_CLASSES, context)
+        n_epochs = self.parameterAsInt(parameters,self.ARGS_EPOCHS, context)
 
         args = {
             "CHUNK_SIZE": 64,
@@ -115,9 +137,10 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             "BANDS": 8,
             "BATCH_SIZE": 16,
             "LEARNING_RATE": 1e-3,
-            "EPOCHS": 20,
+            "EPOCHS": n_epochs,
             "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-            "TRAIN_TYPE": "regression" # classification or regression
+            "TRAIN_TYPE": "classification", # classification or regression
+            "N_CLASSES": n_classes
         }
 
         feedback.pushInfo(f"Args: {args}")

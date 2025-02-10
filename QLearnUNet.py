@@ -47,7 +47,7 @@ class QUDecoder(nn.Module):
 
 class QUNet(nn.Module):
     
-    def __init__(self, in_channels=3, base_channels=64, depth=4, num_class=1, retain_dim=False, out_sz=(256,256)):
+    def __init__(self, in_channels=3, base_channels=64, depth=4, num_class=1, retain_dim=True, out_sz=(256,256)):
         super().__init__()
         enc_chs, dec_chs = self.generate_channels(in_channels, base_channels, depth)
         self.encoder     = QUEncoder(enc_chs)
@@ -67,7 +67,7 @@ class QUNet(nn.Module):
         out      = self.decoder(enc_ftrs[::-1][0], enc_ftrs[::-1][1:])
         out      = self.head(out)
         if self.num_class > 1:
-            out = nn.functional.log_softmax(out, dim=1)  # For multi-class segmentation
-        elif self.retain_dim:
-            out = nn.functional.interpolate(out, size=self.out_sz, mode="bilinear", align_corners=False) # For single-class 
+            out = nn.functional.log_softmax(out, dim=1)
+        if self.retain_dim:
+            out = nn.functional.interpolate(out, size=self.out_sz, mode="bilinear", align_corners=False)
         return out

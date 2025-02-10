@@ -117,7 +117,7 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
         feedback.pushInfo(f"Args: {args}")
         
         predictor = QNNPredictor(iModel,256,context,feedback,args)
-        predictor.predict(iRaster)
+        predictor.predict(iRaster, oRaster)
         
         return {self.OUTPUT_RASTER: oRaster}
 

@@ -76,9 +76,11 @@ class QDataset(Dataset):
 
     def read_chunk(self, ras_filename: str, chX: int, chY: int) -> np.ndarray:
         raster = QgsRasterLayer(ras_filename)
+        raster_band_count = min(self.bands,raster.bandCount())
+
         
         # Initialize a 3D array with the NODATA value
-        data = np.full((self.bands, self.chunkSize, self.chunkSize), self.NODATA, dtype=np.float64)
+        data = np.full((raster_band_count, self.chunkSize, self.chunkSize), self.NODATA, dtype=np.float64)
 
         if not raster.isValid():
             self.feedback.pushWarning(f"ERROR: Issue Reading Raster {ras_filename}")
@@ -100,12 +102,14 @@ class QDataset(Dataset):
         chunkBounds = QgsRectangle(x_min, y_min, x_max, y_max)
 
         # Iterate over each band and extract chunk
-        for b in range(1, self.bands + 1):
+        for b in range(1, raster_band_count + 1):
             block: QgsRasterBlock = provider.block(b, chunkBounds, xSize, ySize)
             if not block:
                 self.feedback.pushInfo(f"ERROR: Failed to read block for band {b}")
                 continue
             
+            #self.feedback.pushInfo(f"BLOCK: B[{b}] MB[{raster_band_count}] DT[{block.dataType()}] - V[{block.isValid()}] - S[{block.toString()}]")
+
             # Set Block's Datatype
             if(not block.convert(Qgis.DataType.Float64)):
                 self.feedback.pushWarning(f"Error: Could not convert block's DataType")
