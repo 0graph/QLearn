@@ -107,7 +107,7 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
         
         iRaster = self.parameterAsRasterLayer(parameters, self.INPUT_RASTER, context)
         iModel = self.parameterAsFile(parameters,self.INPUT_MODEL,context)
-        oRaster = self.parameterAsFileOutput(parameters,self.OUTPUT_RASTER,context)
+        oRaster = self.parameterAsOutputLayer(parameters,self.OUTPUT_RASTER,context)
 
 
         args = {

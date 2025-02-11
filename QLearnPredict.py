@@ -1,5 +1,5 @@
 import torch
-from qgis.core import QgsProcessingFeedback, QgsRasterLayer, QgsProcessingContext, QgsRectangle, QgsRasterBlock, Qgis
+from qgis.core import QgsProcessingFeedback, QgsRasterLayer, QgsProcessingContext, QgsRectangle, QgsRasterBlock, Qgis, QgsRasterDataProvider, QgsDataSourceUri, QgsError
 from .QLearnPreprocessing import QPreprocessing
 from .QLearnUtils import QUtils
 import numpy as np
@@ -15,49 +15,107 @@ class QNNPredictor:
         self.preprocessor = QPreprocessing(context,feedback,args)
 
     def predict(self, in_raster: QgsRasterLayer, out_ras_path: str) -> QgsRasterLayer:
-        # chX, chY = self.preprocessor.calculate_chunks(in_raster)
-        QUtils.setRasterDestination(in_raster, out_ras_path, self.feedback, self.context)
-        out_raster = QgsRasterLayer(out_ras_path)
-
         chX, chY = self.preprocessor.calculate_chunks(in_raster)
-        raster_data = in_raster.as_numpy()
-        self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{chX},{chY}]")
-
+        raster_data: np.ndarray = in_raster.as_numpy()
+        out_raster_data = np.ndarray(shape=(in_raster.width(),in_raster.height()),dtype=raster_data.dtype)
+        out_raster_data.fill(-1)
+        self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{chX},{chY}] DataType[{raster_data.dtype.__str__()}]")
+    
         self.model.eval()  # Ensure model is in evaluation mode
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(device)
 
-        for chunk in self.read_chunk(raster_data, chX, chY):
-            input_tensor = torch.tensor(chunk, dtype=torch.float32).unsqueeze(0).to(device)
+        t_iterations = chX * chY
 
-            with torch.no_grad():
-                output = self.model(input_tensor)
-                prediction = torch.argmax(output, dim=1)
-                prediction = prediction.squeeze(0).cpu().numpy()
+        for iX in range(chX):
+            for iY in range(chY):
+                if self.feedback.isCanceled():
+                    return
 
-                self.feedback.pushInfo("Prediction:")
-                self.feedback.pushInfo(prediction.__str__())
+                chunk = self.read_chunk(raster_data, iX, iY)
+                input_tensor = torch.tensor(chunk.astype(np.float32), dtype=torch.float32).unsqueeze(0).to(device)
 
-            self.write_raster_data(out_raster, prediction)
-        return out_raster
+                with torch.no_grad():
+                    output = self.model(input_tensor)
+                    prediction = torch.argmax(output, dim=1)
+                    prediction = prediction.squeeze(0).cpu().numpy() 
+
+                    x_start, x_end = self.chunkSize * iX, self.chunkSize * (iX + 1)
+                    y_start, y_end = self.chunkSize * iY, self.chunkSize * (iY + 1)
+                    x_end = min(x_end, out_raster_data.shape[0])
+                    y_end = min(y_end, out_raster_data.shape[1])
+
+                    out_raster_data[x_start:x_end, y_start:y_end] = prediction[:x_end - x_start, :y_end - y_start]
+                
+                self.feedback.setProgress((((iX * chY) + iY) / t_iterations)*100)
+
+        # Write the final raster data
+        self.write_raster_data(in_raster, out_ras_path, out_raster_data)
+        return QgsRasterLayer(out_ras_path)
 
 
-    def write_raster_data(self, raster: QgsRasterLayer, data: np.ndarray, chX: int, chY: int) -> bool:
-        if not raster.isValid():
-            self.feedback.pushInfo("ERROR: Cannot write raster data, raster is invalid")
+
+    def write_raster_data(self, in_raster: QgsRasterLayer, out_raster_path: str, data: np.ndarray) -> bool:
+        
+        out_raster = QUtils.createSinglebandRaster(
+            destination="memory:predicted_raster",
+            feedback=self.feedback,
+            crs=in_raster.crs(),
+            extent=in_raster.extent(),
+            width=in_raster.width(),
+            height=in_raster.height()
+        )
+
+        if out_raster is None or not out_raster.isValid():
+            self.feedback.pushWarning("Error: Output raster is not valid!")
+            return None
+
+        provider = out_raster.dataProvider()
+        self.feedback.pushInfo(f"Provider URI: {provider.dataSourceUri()} Raster SRC: {out_raster.source()} Provider Bands: {provider.bandCount()} band1desc:{provider.bandDescription(1)}")
+        
+        provider.setEditable(True)
+        provider.bandDescription(1)
+
+        if not provider.isValid():
+            self.feedback.pushInfo("ERROR: Cannot write raster data, provider is invalid")
             return False
         
-        prov = raster.dataProvider()
-        sX = self.chunkSize*chX
-        sY = self.chunkSize*chY
-        szX = min(raster.width() - (sX + self.chunkSize), self.chunkSize)
-        szY = min(raster.height() - (sY + self.chunkSize), self.chunkSize)
-        self.feedback.pushInfo(f"Writing Chunk to {raster.name()} - Chunk[{chX},{chY}] Coords[{sX},{sY}] Size[{szX},{szY}] Shape[{data.shape.__str__()}]")
+        self.feedback.pushInfo(f"DataShape: {data.shape.__str__()} RasterShape: ({provider.xSize()},{provider.ySize()})")
+        self.feedback.pushInfo(f"Mean: {data.mean()}, Data: {data}")
 
-        if not prov.write(data,1,szX,szY,sX,sY):
+        #block = QgsRasterBlock(Qgis.DataType.Float32, data.shape[0], data.shape[1])
+        block = provider.block(1,provider.extent(),provider.xSize(),provider.ySize())
+        if not block.isValid():
+            self.feedback.pushInfo(f"Error: Cannot write raster data, block is invalid")
+            return False
+        
+        
+        self.feedback.pushInfo(f"BlockData: {block.width()},{block.height()} - E:{block.isEmpty()} - T:{block.dataType()}")
+        
+        i = 0
+        for xI in range(provider.xSize()):
+            for yI in range(provider.ySize()):
+                block.setValue(yI, xI, data[xI, yI])
+
+                i+=1
+                if(i % 5000 == 0):
+                    self.feedback.pushInfo(f"Writing {data[xI, yI]} to block[{xI,yI}] for {i} Result: {block.value(yI, xI)}")
+        
+        #block.setData(data.tobytes())
+        if not block.isValid():
+            self.feedback.pushInfo(f"Error: Cannot write raster data, block is invalid 2")
+            return False
+
+        if not provider.writeBlock(block,1,0,0):
             self.feedback.pushInfo("ERROR: Cannot write raster data, write operation failed")
             return False
+        
+        provider.setEditable(False)
+        
+        self.feedback.pushInfo(f"URI: {provider.dataSourceUri()} Errors:{provider.error().summary()}")
+
+        QUtils.setRasterDestination(out_raster,out_raster_path,self.feedback,self.context)
 
         return True
         
@@ -67,6 +125,8 @@ class QNNPredictor:
         sY = chY * self.chunkSize
         eX = sX + self.chunkSize
         eY = sY + self.chunkSize
+
+        # self.feedback.pushInfo(f"Reading Chunk ({chX},{chY}) from array with shape: {data.shape.__str__()}")
         
         # Pad data if needed
         pad_x = max(0, eX - data.shape[1])

@@ -1,4 +1,4 @@
-from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingContext, Qgis
+from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingContext, Qgis, QgsRasterFileWriter, QgsRasterDataProvider
 from qgis import processing
 import numpy as np
 
@@ -21,4 +21,24 @@ class QUtils:
                 context=context,
                 feedback=feedback)
         
-        
+    @staticmethod
+    def createSinglebandRaster(destination: str, feedback: QgsProcessingFeedback, crs, extent, width, height) -> QgsRasterLayer:
+        writer = QgsRasterFileWriter(destination)
+        writer.setOutputFormat("GTiff")  # GeoTIFF format
+
+        # Create the raster file
+        provider = writer.createOneBandRaster(
+            dataType=Qgis.DataType.Float32,
+            width=width,
+            height=height,
+            extent=extent,
+            crs=crs
+        )
+
+        # Load the newly created raster as a QgsRasterLayer
+        raster_layer = QgsRasterLayer(destination, "Output Raster")
+        if not raster_layer.isValid():
+            feedback.pushWarning("Error: Failed to create singleband raster")
+            return None
+
+        return raster_layer
