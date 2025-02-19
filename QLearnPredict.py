@@ -17,8 +17,10 @@ class QNNPredictor:
     def predict(self, in_raster: QgsRasterLayer, out_ras_path: str) -> QgsRasterLayer:
         chX, chY = self.preprocessor.calculate_chunks(in_raster)
         raster_data: np.ndarray = in_raster.as_numpy()
+        raster_data = raster_data.transpose(0, 2, 1)
+        self.feedback.pushInfo(f"Raster Data Shape: {raster_data.shape.__str__()} Data {raster_data}")
         out_raster_data = np.ndarray(shape=(in_raster.width(),in_raster.height()),dtype=raster_data.dtype)
-        out_raster_data.fill(-1)
+        out_raster_data.fill(1000.0)
         self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{chX},{chY}] DataType[{raster_data.dtype.__str__()}]")
     
         self.model.eval()  # Ensure model is in evaluation mode
@@ -34,17 +36,20 @@ class QNNPredictor:
                     return
 
                 chunk = self.read_chunk(raster_data, iX, iY)
+
+                self.feedback.pushInfo(f"Chunk Shape: {chunk.shape.__str__()} Data {chunk}")
+
                 input_tensor = torch.tensor(chunk.astype(np.float32), dtype=torch.float32).unsqueeze(0).to(device)
 
                 with torch.no_grad():
                     output = self.model(input_tensor)
                     prediction = torch.argmax(output, dim=1)
-                    prediction = prediction.squeeze(0).cpu().numpy() 
+                    prediction = prediction.squeeze().cpu().numpy() 
 
                     x_start, x_end = self.chunkSize * iX, self.chunkSize * (iX + 1)
                     y_start, y_end = self.chunkSize * iY, self.chunkSize * (iY + 1)
-                    x_end = min(x_end, out_raster_data.shape[0])
-                    y_end = min(y_end, out_raster_data.shape[1])
+                    x_end = min(x_end, in_raster.width())
+                    y_end = min(y_end, in_raster.height())
 
                     out_raster_data[x_start:x_end, y_start:y_end] = prediction[:x_end - x_start, :y_end - y_start]
                 

@@ -66,8 +66,6 @@ class QUNet(nn.Module):
         enc_ftrs = self.encoder(x)
         out      = self.decoder(enc_ftrs[::-1][0], enc_ftrs[::-1][1:])
         out      = self.head(out)
-        if self.num_class > 1:
-            out = nn.functional.log_softmax(out, dim=1)
         if self.retain_dim:
             out = nn.functional.interpolate(out, size=self.out_sz, mode="bilinear", align_corners=False)
         return out

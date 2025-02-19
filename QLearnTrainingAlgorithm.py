@@ -70,6 +70,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     INPUT_TRAIN = 'INPUT_TRAINING_RASTER'
     INPUT_TARGET = 'INPUT_TARGET_RASTER'
     INPUT_CLASSES = 'INPUT_CLASSES'
+    ARGS_NODATA = 'ARGS_NODATA'
     ARGS_EPOCHS = 'ARGS_EPOCH'
 
     def initAlgorithm(self, config):
@@ -112,6 +113,14 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         )
 
         self.addParameter(
+            QgsProcessingParameterNumber(
+                self.ARGS_NODATA,
+                self.tr("NODATA Value"),
+                defaultValue=0
+            )
+        )
+
+        self.addParameter(
             QgsProcessingParameterFileDestination(
                 self.OUTPUT_MODEL,
                 self.tr("Output model location")
@@ -130,10 +139,11 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         model_save_loc = self.parameterAsFileOutput(parameters, self.OUTPUT_MODEL, context)
         n_classes = self.parameterAsInt(parameters,self.INPUT_CLASSES, context)
         n_epochs = self.parameterAsInt(parameters,self.ARGS_EPOCHS, context)
+        nodata = self.parameterAsInt(parameters,self.ARGS_NODATA, context)
 
         args = {
             "CHUNK_SIZE": 64,
-            "NODATA": -1.0,
+            "NODATA": nodata,
             "BANDS": 8,
             "BATCH_SIZE": 16,
             "LEARNING_RATE": 1e-3,
