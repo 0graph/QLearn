@@ -44,13 +44,20 @@ class QNNPredictor:
                 with torch.no_grad():
                     output = self.model(input_tensor)
                     prediction = torch.argmax(output, dim=1)
+                    unique_classes = prediction.unique()
+                    self.feedback.pushInfo(f"Unique predicted classes in batch: {unique_classes.cpu().numpy()}")
                     prediction = prediction.squeeze().cpu().numpy() 
+
+                    probabilities = torch.softmax(output, dim=1)
+                    max_probs, preds = torch.max(probabilities, dim=1)
+                    self.feedback.pushInfo(f"MaxProbs: {max_probs} Preds: {preds}")
+                    self.feedback.pushInfo(f"Prediction Shape: {prediction.shape.__str__()} Data {prediction}")
 
                     x_start, x_end = self.chunkSize * iX, self.chunkSize * (iX + 1)
                     y_start, y_end = self.chunkSize * iY, self.chunkSize * (iY + 1)
                     x_end = min(x_end, in_raster.width())
                     y_end = min(y_end, in_raster.height())
-
+                    
                     out_raster_data[x_start:x_end, y_start:y_end] = prediction[:x_end - x_start, :y_end - y_start]
                 
                 self.feedback.setProgress((((iX * chY) + iY) / t_iterations)*100)

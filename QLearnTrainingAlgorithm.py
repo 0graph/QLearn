@@ -141,8 +141,11 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         n_epochs = self.parameterAsInt(parameters,self.ARGS_EPOCHS, context)
         nodata = self.parameterAsInt(parameters,self.ARGS_NODATA, context)
 
+        feedback.pushInfo("NoData Value: " + str(nodata))
+        feedback.pushInfo("Number of Classes: " + str(n_classes))
+        feedback.pushInfo("Number of Epochs: " + str(n_epochs))
         args = {
-            "CHUNK_SIZE": 64,
+            "CHUNK_SIZE": 256,
             "NODATA": nodata,
             "BANDS": 8,
             "BATCH_SIZE": 16,
@@ -156,7 +159,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         feedback.pushInfo(f"Args: {args}")
 
         # Setup Dataset
-        dataset = QDataset(training_rasters, target_rasters,context,feedback)
+        dataset = QDataset(training_rasters, target_rasters,context,feedback,args)
         trainer = QUNetTrainer(dataset,model_save_loc,feedback,args)
         try:
             trainer.train()

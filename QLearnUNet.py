@@ -5,7 +5,7 @@ import torch
 class QUBlock(nn.Module):
     def __init__(self, in_ch, out_ch):
         super().__init__()
-        self.conv1 = nn.Conv2d(in_ch, out_ch, 3,)
+        self.conv1 = nn.Conv2d(in_ch, out_ch, 3)
         self.relu  = nn.ReLU()
         self.conv2 = nn.Conv2d(out_ch, out_ch, 3)
     

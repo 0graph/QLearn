@@ -14,6 +14,7 @@ class QUNetTrainer:
         self.device = args.get("DEVICE", torch.device("cpu"))           # CPU or GPU
         self.n_classes = args.get("N_CLASSES", 1)                       # Number of output classes, this should be determined automatically from the target dataset
         self.task = args.get("TRAIN_TYPE", "regression")                # regression or classification
+                                                                        #
         self.model: QUNet = QUNet(                                      # UNet Model Init
             in_channels=dataset.bands,                                  # Number of bands in input image
             base_channels=64,                                           #
@@ -22,11 +23,13 @@ class QUNetTrainer:
             retain_dim=True,                                            #
             out_sz=(dataset.chunkSize, dataset.chunkSize)               # Chunk Size
         ).to(self.device)                                               # Set device to be used for processing
+                                                                        #
         self.dataloader = DataLoader(                                   # Dataloader
             self.dataset,                                               # Dataset for Dataloader
             batch_size=args.get("BATCH_SIZE",4),                        # Batch size for processing
             shuffle=False,                                              #
             num_workers=0)                                              # Set to 0 as there are multithreading issues I believe
+                                                                        #       
         self.epochs = args.get("EPOCHS",10)                             # Number of epochs to train for
         self.learning_rate = args.get("LEARNING_RATE",1e-3)             # Learning Rate
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate) # Optimizer
@@ -36,6 +39,7 @@ class QUNetTrainer:
         # Use different loss criterion depending on segmentation type
         if self.task == "classification": 
             self.criterion = nn.CrossEntropyLoss(ignore_index=self.dataset.NODATA)
+            self.feedback.pushInfo(f"IgnoreIndex: {self.dataset.NODATA}")
         else:  # Regression
             self.criterion = nn.MSELoss()
         
@@ -66,6 +70,9 @@ class QUNetTrainer:
                     targ_chunk = targ_chunk.squeeze(1)     
 
                 self.feedback.pushInfo(f"AFTERRESIZE Output shape: {outputs.shape}, Target shape: {targ_chunk.shape}")
+
+                self.feedback.pushInfo(f"Sample Output: {outputs[0, :, 100, 100].detach().cpu().numpy()}")
+                self.feedback.pushInfo(f"Sample Target: {targ_chunk[0, 100, 100].detach().cpu().numpy()}")
 
                 loss = self.criterion(outputs, targ_chunk)  # Compute loss without masking
 
