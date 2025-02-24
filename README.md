@@ -8,11 +8,6 @@ A QGIS Plugin allowing for neural network model training and prediction using th
   - Run `C:\Program Files\YourQGISFolder\apps\PythonVersion> .\Scripts\pip.exe install --target .\Lib\site-packages\ torch`
 
 #### Issues
-- `QLearnDataset`
-  - NoData values are not being set/converted for rasters (In Read Chunk they are supposedly working)
-  - All input rasters must be converted to same data type
-  - All target rasters must be converted to same data type
-  - reading chunks from buffer is not reading the correct value - upgrade to QGIS 3.40 and use as_numpy
 - `QLearnPreprocessing`
   - ~~Dosent generate chunks covering the entire image~~
   - Dosent deal with error values in rasters
@@ -21,5 +16,3 @@ A QGIS Plugin allowing for neural network model training and prediction using th
 
 
 #### Testing
-- `Partial Chunks:` Do partial chunks contain correct data and nodata values in proper spot in returned array from read_chunk in *QLearnDataset* - initial testing shows its working
-- `Input Data Types:` Are input raster data types being converted correctly
