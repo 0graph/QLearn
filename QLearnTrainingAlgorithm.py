@@ -36,6 +36,7 @@ from qgis.core import (Qgis,
                        QgsProcessingAlgorithm,
                        QgsProcessingParameterMultipleLayers,
                        QgsProcessingParameterFileDestination,
+                       QgsProcessingParameterRasterLayer,
                        QgsProcessingParameterNumber)
 
 from .QLearnDataset import QDataset
@@ -47,7 +48,7 @@ import traceback
 class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     
     def flags(self):
-        return super().flags() | Qgis.ProcessingAlgorithmFlag.NoThreading
+        return super().flags() #| Qgis.ProcessingAlgorithmFlag.NoThreading
     
     """
     This is an example algorithm that takes a vector layer and
@@ -91,7 +92,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterMultipleLayers(
             self.INPUT_TARGET,
-            self.tr("Target rasters"),
+            self.tr("Target raster"),
             layerType=QgsProcessing.SourceType.TypeRaster)
         )
 
@@ -141,9 +142,6 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         n_epochs = self.parameterAsInt(parameters,self.ARGS_EPOCHS, context)
         nodata = self.parameterAsInt(parameters,self.ARGS_NODATA, context)
 
-        feedback.pushInfo("NoData Value: " + str(nodata))
-        feedback.pushInfo("Number of Classes: " + str(n_classes))
-        feedback.pushInfo("Number of Epochs: " + str(n_epochs))
         args = {
             "CHUNK_SIZE": 256,
             "NODATA": nodata,
@@ -153,7 +151,9 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             "EPOCHS": n_epochs,
             "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
             "TRAIN_TYPE": "classification", # classification or regression
-            "N_CLASSES": n_classes
+            "N_CLASSES": n_classes,
+            "GENERATE_AUGMENTED": False,
+            "NORMALIZE": False
         }
 
         feedback.pushInfo(f"Args: {args}")
@@ -164,8 +164,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         try:
             trainer.train()
         except Exception as e:
-            with open("qgis_training_error.log", "w") as f:
-                f.write(traceback.format_exc())
+            feedback.reportError(str(e))
             raise e
 
 

@@ -1,10 +1,10 @@
 from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback
 from qgis.analysis import QgsAlignRaster
-from qgis import processing
+import numpy as np
 
 
 
-
+# A class used to preprocess rasters for training and prediction
 class QPreprocessing:
 
     def __init__(self, 
@@ -13,8 +13,8 @@ class QPreprocessing:
                  args: dict = dict()):
         self.context = context                      # Context for QGIS Processing Algorithms
         self.feedback = feedback                    # Feedback Manager for QGIS Processing Algorithms
-        self.chunkSize = args.get("CHUNK_SIZE",256)  # Split Images into Chunks of this size
-        self.NODATA = args.get("NODATA",-1)         # NoData Value for rasters
+        self.chunkSize = args["CHUNK_SIZE"]         # Split Images into Chunks of this size
+        self.NODATA = args["NODATA"]               # NoData Value for rasters
 
     # Aligns a training raster and a target raster
     def alignRasters( self,
@@ -23,9 +23,6 @@ class QPreprocessing:
         
         mem_training = "memory:training_raster"
         mem_target = "memory:target_raster"
-
-        self.replace_NODATA(training_raster, mem_training)
-        self.replace_NODATA(target_raster, mem_target)
 
         alignRaster = QgsAlignRaster()
         rasters_to_align = [ # Creates in memory rasters for alignment
@@ -58,10 +55,6 @@ class QPreprocessing:
         
         return True, aligned_training, aligned_target
     
-    # Replaces NODATA values with a predefined 
-    def replace_NODATA(self, ras: QgsRasterLayer, outputDestination: str) -> bool:
-        pass
-    
     # calculate number of chunks in raster
     def calculate_chunks(self, ras: QgsRasterLayer) -> tuple[int, int]:
         width = ras.width()
@@ -74,4 +67,8 @@ class QPreprocessing:
 
     # Generates augmented raster images to enhance training
     def gen_augmentations(self, ras: QgsRasterLayer):
+        pass
+
+    # Normalizes data values
+    def normalize(self, arr: np.ndarray) -> np.ndarray:
         pass

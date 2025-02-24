@@ -5,11 +5,12 @@ from .QLearnUtils import QUtils
 import numpy as np
 
 class QNNPredictor:
-    def __init__(self, modelPath: str, chunkSize: int, context: QgsProcessingContext, feedback: QgsProcessingFeedback, args: dict = dict()):
+    def __init__(self, modelPath: str, context: QgsProcessingContext, feedback: QgsProcessingFeedback, args: dict = dict()):
         self.model = torch.load(modelPath)
         self.feedback = feedback
         self.feedback.pushInfo(f"Model: {self.model}")
-        self.chunkSize = chunkSize
+        self.chunkSize = args["CHUNK_SIZE"]
+        self.NODATA = args["NO_DATA"]
         self.args = args
         self.context = context
         self.preprocessor = QPreprocessing(context,feedback,args)

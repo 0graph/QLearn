@@ -111,12 +111,15 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
 
 
         args = {
-            
+            "CONFIDENCE": 0.5,
+            "CHUNK_SIZE": 256,
+            "NODATA": 0,
+            "NORMALIZE": False
         }
 
         feedback.pushInfo(f"Args: {args}")
         
-        predictor = QNNPredictor(iModel,256,context,feedback,args)
+        predictor = QNNPredictor(iModel,context,feedback,args)
         predictor.predict(iRaster, oRaster)
         
         return {self.OUTPUT_RASTER: oRaster}

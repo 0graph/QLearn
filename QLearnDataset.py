@@ -17,16 +17,16 @@ class QDataset(Dataset):
                  feedback: QgsProcessingFeedback,
                  args: dict = dict()):
         
-        self.training_rasters = training_rasters
+        self.training_raster = training_rasters
         self.target_rasters = target_rasters
         self.context = context
         self.feedback = feedback
         self.preprocessor = QPreprocessing(self.context,self.feedback, args)
         self.chunk_indices = []                                     # Indices of each chunk for each raster in aligned_rasters
         self.aligned_rasters = []                                   # The list of aligned raster filenames
-        self.chunkSize = args.get("CHUNK_SIZE",256)                 # Split Images into Chunks of this size
-        self.NODATA = args.get("NODATA",-1)                         # NoData Value for rasters
-        self.bands = args.get("BANDS",999)                          # Calculated from each training raster, will use the lowest value. 
+        self.chunkSize = args["CHUNK_SIZE"]                         # Split Images into Chunks of this size
+        self.NODATA = args["NODATA"]                                # NoData Value for rasters
+        self.bands = args["BANDS"]                                  # Calculated from each training raster, will use the lowest value. 
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
 
