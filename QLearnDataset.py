@@ -29,6 +29,10 @@ class QDataset(Dataset):
         self.bands = args["BANDS"]                                  # Calculated from each training raster, will use the lowest value. 
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
+        self.do_class_mapping = args["CLASS_REMAPPING"]             # Weather to preform automatic class remapping
+        self.class_mapping = {0 : self.NODATA}                      # the class mapping dictionary { new_class : old_class }
+        self.inv_class_mapping = {self.NODATA : 0}                  # Used for rempapping tensors { old_class : new_class }
+
 
         if(len(training_rasters) != len(target_rasters)):
             self.feedback.pushWarning("Error: Length of Input Rasters and Target Rasters does not match")
@@ -53,10 +57,14 @@ class QDataset(Dataset):
                 self.aligned_rasters.append((training_aligned_filename, target_aligned_filename))
 
         # Calculate total number of chunks across all rasters to be used by PyTorch DataLoader
-        for i, (train_ras_f, _) in enumerate(self.aligned_rasters):
-            ras = QgsRasterLayer(train_ras_f)
-            chX, chY = self.preprocessor.calculate_chunks(ras)
+        for i, (train_ras_f, targ_ras_f) in enumerate(self.aligned_rasters):
+            train_ras = QgsRasterLayer(train_ras_f)
+            targ_ras = QgsRasterLayer(targ_ras_f)
+            chX, chY = self.preprocessor.calculate_chunks(train_ras)
             self.chunk_indices.extend([(i, x, y) for x in range(chX) for y in range(chY)])
+            # Add Class mappings from aligned rasters
+            if self.do_class_mapping:
+                self.update_class_mapping(targ_ras.as_numpy())
 
     def __len__(self):
         return len(self.chunk_indices)
@@ -72,7 +80,31 @@ class QDataset(Dataset):
         training_tensor = torch.tensor(training_chunk, dtype=torch.float32)
         target_tensor = torch.tensor(target_chunk, dtype=torch.float32)
 
-        return training_tensor, target_tensor
+        return training_tensor, self.remap_classes(target_tensor)
+    
+    # preform class remapping based on dictionary (target raster)
+    def remap_classes(self, tensor : torch.tensor) -> torch.tensor:
+        if not self.do_class_mapping:
+            return tensor
+        
+        np_tensor = tensor.numpy()
+        # Create output array with the same shape
+        remapped_array = np.full(np_tensor.shape, fill_value=self.NODATA, dtype=np.int64)  # NODATA
+
+        # Apply mapping using inverse mapping
+        for old_class, new_class in self.inv_class_mapping.items():
+            remapped_array[np_tensor == old_class] = new_class
+
+        return torch.tensor(remapped_array, dtype=torch.int64)
+        
+    # update class mapping with new unique values
+    def update_class_mapping(self, arr : np.array):
+        unique_classes = np.unique(arr)
+
+        self.class_mapping = {i: cls for i, cls in enumerate(unique_classes)}
+        self.inv_class_mapping = {cls: i for i, cls in enumerate(unique_classes)}
+
+        self.feedback.pushInfo(f"Updated Class Mapping: {self.class_mapping}")  # Debugging statement
 
     def read_chunk(self, ras_filename: str, chX: int, chY: int) -> np.ndarray:
         raster = QgsRasterLayer(ras_filename)

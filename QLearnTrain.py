@@ -12,7 +12,7 @@ class QUNetTrainer:
     def __init__(self, dataset: QDataset, output_loc: str, feedback: QgsProcessingFeedback, args: dict = dict()):
         self.dataset = dataset                                          # Dataset used for DataLoader
         self.device = args["DEVICE"]                                    # CPU or GPU
-        self.n_classes = args["N_CLASSES"]                              # Number of output classes, this should be determined automatically from the target dataset
+        self.n_classes = len(self.dataset.class_mapping)                # Number of output classes, this should be determined automatically from the target dataset
         self.task = args["TRAIN_TYPE"]                                  # regression or classification
         self.epochs = args["EPOCHS"]                                    # Number of epochs to train for
         self.learning_rate = args["LEARNING_RATE"]                      # Learning Rate
@@ -38,6 +38,8 @@ class QUNetTrainer:
         
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate) # Optimizer
 
+        self.feedback.pushInfo(f"Number of Classes: {self.n_classes} detected.")
+
         # Use different loss criterion depending on segmentation type
         if self.task == "classification": 
             self.criterion = nn.CrossEntropyLoss(ignore_index=self.NODATA)
@@ -52,6 +54,7 @@ class QUNetTrainer:
     def train(self):
         self.feedback.pushInfo(f"Training Started. {self.epochs} epochs, {self.dataset.__len__()} chunks")
         self.model.train()
+        
         for epoch in range(self.epochs):
             epoch_loss = 0.0
 
@@ -59,23 +62,29 @@ class QUNetTrainer:
                 img_chunk, targ_chunk = img_chunk.to(self.device), targ_chunk.to(self.device)
 
                 outputs = self.model(img_chunk)
-                
-                if self.task == "classification":   # (CrossEntropyLoss)
-                    targ_chunk = targ_chunk.long()  # Convert to Class labels
-                else:                               # Regression (MSELoss)
-                    targ_chunk = targ_chunk.float() # Ensure float values
-                    
+
+                # Debug: Log tensor shapes
+                self.feedback.pushInfo(f"Epoch [{epoch+1}/{self.epochs}] - Output Shape: {outputs.shape} | Target Shape: {targ_chunk.shape}")
+
+                if self.task == "classification":  
+                    # Convert to Class labels
+                    targ_chunk = targ_chunk.long()
+                else:  
+                    targ_chunk = targ_chunk.float()  # Ensure float values for regression
 
                 if targ_chunk.ndim == 4 and targ_chunk.shape[1] == 1:
                     targ_chunk = targ_chunk.squeeze(1)
 
-                try:
-                    loss = self.criterion(outputs, targ_chunk)  # Compute loss without masking
-                except IndexError as e:
-                    self.feedback.pushWarning("Error: the number of classes specified is LESS then the actual number of classes.")
-                    self.feedback.setProgressText("Error: See Logs.")
-                    self.feedback.cancel()
-                    return
+                # Debug: Check if target has unexpected classes
+                unique_classes = torch.unique(targ_chunk).tolist()
+                #self.feedback.pushInfo(f"Classes present in this batch: {unique_classes}")
+
+                if any(c >= self.n_classes for c in unique_classes):
+                    self.feedback.pushWarning(
+                        f"Warning: Found class labels greater than {self.n_classes - 1}! (Classes: {unique_classes})"
+                    )
+                
+                loss = self.criterion(outputs, targ_chunk)  # Compute loss
 
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -86,7 +95,7 @@ class QUNetTrainer:
             self.feedback.setProgressText(f"Epoch [{epoch+1}/{self.epochs}], Loss: {epoch_loss/len(self.dataloader):.4f}")
             self.feedback.setProgress(((epoch+1)/self.epochs)*100)
             
-            if(self.feedback.isCanceled()):
+            if self.feedback.isCanceled():
                 self.feedback.pushInfo("Training Cancelled...")
                 self.save_model()
                 return

@@ -70,7 +70,6 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     OUTPUT_MODEL = 'OUTPUT_MODEL'
     INPUT_TRAIN = 'INPUT_TRAINING_RASTER'
     INPUT_TARGET = 'INPUT_TARGET_RASTER'
-    INPUT_CLASSES = 'INPUT_CLASSES'
     ARGS_NODATA = 'ARGS_NODATA'
     ARGS_EPOCHS = 'ARGS_EPOCH'
 
@@ -94,15 +93,6 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             self.INPUT_TARGET,
             self.tr("Target raster"),
             layerType=QgsProcessing.SourceType.TypeRaster)
-        )
-
-        
-        self.addParameter(
-            QgsProcessingParameterNumber(
-                self.INPUT_CLASSES,
-                self.tr("Number of Classes"),
-                defaultValue=1
-            )
         )
 
         self.addParameter(
@@ -138,22 +128,22 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         training_rasters = self.parameterAsLayerList(parameters, self.INPUT_TRAIN, context)
         target_rasters = self.parameterAsLayerList(parameters, self.INPUT_TARGET, context)
         model_save_loc = self.parameterAsFileOutput(parameters, self.OUTPUT_MODEL, context)
-        n_classes = self.parameterAsInt(parameters,self.INPUT_CLASSES, context)
         n_epochs = self.parameterAsInt(parameters,self.ARGS_EPOCHS, context)
         nodata = self.parameterAsInt(parameters,self.ARGS_NODATA, context)
 
         args = {
             "CHUNK_SIZE": 256,
             "NODATA": nodata,
+            "IGNORE_INDEX" : -100,
             "BANDS": 8,
             "BATCH_SIZE": 16,
             "LEARNING_RATE": 1e-3,
             "EPOCHS": n_epochs,
             "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
             "TRAIN_TYPE": "classification", # classification or regression
-            "N_CLASSES": n_classes,
             "GENERATE_AUGMENTED": False,
-            "NORMALIZE": False
+            "NORMALIZE": False,
+            "CLASS_REMAPPING": True
         }
 
         feedback.pushInfo(f"Args: {args}")

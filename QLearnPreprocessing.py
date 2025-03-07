@@ -65,10 +65,10 @@ class QPreprocessing:
         chunksY = (height // self.chunkSize) + 1
         return chunksX, chunksY
 
-    # Generates augmented raster images to enhance training
+    # Generates augmented raster images to enhance training (input only)
     def gen_augmentations(self, ras: QgsRasterLayer):
         pass
 
-    # Normalizes data values
+    # Normalizes data values (input only)
     def normalize(self, arr: np.ndarray) -> np.ndarray:
         pass

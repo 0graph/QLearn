@@ -10,7 +10,7 @@ class QNNPredictor:
         self.feedback = feedback
         self.feedback.pushInfo(f"Model: {self.model}")
         self.chunkSize = args["CHUNK_SIZE"]
-        self.NODATA = args["NO_DATA"]
+        self.NODATA = args["NODATA"]
         self.args = args
         self.context = context
         self.preprocessor = QPreprocessing(context,feedback,args)

@@ -1,16 +1,20 @@
 import torch.nn as nn
-import torch
+import torch, torchvision
 
 # Source: https://amaarora.github.io/posts/2020-09-13-unet.html
 class QUBlock(nn.Module):
     def __init__(self, in_ch, out_ch):
         super().__init__()
-        self.conv1 = nn.Conv2d(in_ch, out_ch, 3)
+        self.pad   = nn.ReplicationPad2d(1)  # pad data to avoid edge artefacts
+        self.conv1 = nn.Conv2d(in_ch, out_ch, 3, padding=0)
         self.relu  = nn.ReLU()
-        self.conv2 = nn.Conv2d(out_ch, out_ch, 3)
+        self.conv2 = nn.Conv2d(out_ch, out_ch, 3, padding=1)
     
     def forward(self, x):
-        return self.relu(self.conv2(self.relu(self.conv1(x))))
+        x = self.pad(x)  
+        x = self.relu(self.conv1(x))
+        return self.relu(self.conv2(x))
+
 
 class QUEncoder(nn.Module):
     def __init__(self, in_channels=(3,64,128,256,512,1024)):
@@ -31,19 +35,25 @@ class QUDecoder(nn.Module):
         super().__init__()
         self.chs         = chs
         self.upconvs = nn.ModuleList([
-            nn.Conv2d(chs[i], chs[i+1], 3, padding=1) 
+            nn.ConvTranspose2d(chs[i], chs[i+1], 2, 2) 
             for i in range(len(chs)-1)
         ])
-        self.dec_blocks = nn.ModuleList([QUBlock(chs[i], chs[i+1]) for i in range(len(chs)-1)]) 
+        self.dec_blocks = nn.ModuleList(
+            [QUBlock(chs[i], chs[i+1]) 
+            for i in range(len(chs)-1)]) 
         
     def forward(self, x, encoder_features):
         for i in range(len(self.chs)-1):
-            target_size = encoder_features[i].shape[2:]
-            x = nn.functional.interpolate(x, size=target_size, mode='bilinear', align_corners=False)
-            x = self.upconvs[i](x)
-            x = torch.cat([x, encoder_features[i]], dim=1)
-            x = self.dec_blocks[i](x)
+            x        = self.upconvs[i](x)
+            enc_ftrs = self.crop(encoder_features[i], x)
+            x        = torch.cat([x, enc_ftrs], dim=1)
+            x        = self.dec_blocks[i](x)
         return x
+    
+    def crop(self, enc_ftrs, x):
+        _, _, H, W = x.shape
+        enc_ftrs   = torchvision.transforms.CenterCrop([H, W])(enc_ftrs)
+        return enc_ftrs
 
 class QUNet(nn.Module):
     
