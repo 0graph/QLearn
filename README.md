@@ -29,6 +29,7 @@ A QGIS Plugin allowing for neural network model training and prediction using th
   - Fix raster edges having garbage prediction results
     - Copy the edge by the convolution mask size
 - `Cancelling:` should be able to cancel in between chunks not just in between epochs
+- `Batch Size:` barch size specified in QLearnTrainingAlgorithm.py is causing issues with not all training data being used in QLearnTrain.py (is 16)
 
 
 #### Testing Needed

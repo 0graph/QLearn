@@ -92,13 +92,13 @@ class QUNetTrainer:
 
                 epoch_loss += loss.item()
 
+                if self.feedback.isCanceled():
+                    self.feedback.pushInfo("Training Cancelled...")
+                    self.save_model()
+                    return
+
             self.feedback.setProgressText(f"Epoch [{epoch+1}/{self.epochs}], Loss: {epoch_loss/len(self.dataloader):.4f}")
             self.feedback.setProgress(((epoch+1)/self.epochs)*100)
-            
-            if self.feedback.isCanceled():
-                self.feedback.pushInfo("Training Cancelled...")
-                self.save_model()
-                return
         
         self.feedback.pushInfo("Training Finished!")
         self.save_model()

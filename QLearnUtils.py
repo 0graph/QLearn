@@ -1,4 +1,5 @@
-from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingContext, Qgis, QgsRasterFileWriter, QgsRasterDataProvider
+from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingContext, Qgis, QgsRasterFileWriter
+from qgis.analysis import QgsAlignRaster
 from qgis import processing
 import numpy as np
 
@@ -42,3 +43,64 @@ class QUtils:
             return None
 
         return raster_layer
+    
+    # Aligns a training raster and a target raster
+    @staticmethod
+    def alignRasters(
+            training_raster: QgsRasterLayer, 
+            target_raster: QgsRasterLayer, feedback: QgsProcessingFeedback) -> tuple[bool,QgsRasterLayer,QgsRasterLayer]:
+        
+        mem_training = "memory:training_raster"
+        mem_target = "memory:target_raster"
+
+        alignRaster = QgsAlignRaster()
+        rasters_to_align = [ # Creates in memory rasters for alignment
+            QgsAlignRaster.Item(target_raster.source(),mem_target),
+            QgsAlignRaster.Item(training_raster.source(),mem_training)
+            ]
+
+        alignRaster.setRasters(rasters_to_align)
+
+        # Set Raster to Align to
+        alignRaster.setParametersFromRaster(QgsAlignRaster.RasterInfo(training_raster.source()))
+
+        success = alignRaster.checkInputParameters()
+        if(not success):
+            feedback.pushInfo(alignRaster.errorMessage())
+            return False, None, None
+        
+        # Run Alignment
+        success = alignRaster.run()
+        if(not success):
+            feedback.pushInfo(alignRaster.errorMessage())
+            return False, None, None
+        
+        aligned_training = QgsRasterLayer(mem_training, "Aligned Training Raster")
+        aligned_target = QgsRasterLayer(mem_target, "Aligned Target Raster")
+
+        if not aligned_training.isValid() or not aligned_target.isValid():
+            feedback.reportError("Error: Failed to load aligned rasters.")
+            return False, None, None
+        
+        return True, aligned_training, aligned_target
+    
+    # calculate number of chunks in raster
+    @staticmethod
+    def calculate_chunks(ras: QgsRasterLayer, chunkSize: int) -> tuple[int, int]:
+        width = ras.width()
+        height = ras.height()
+
+        # +1 to Account for partial chunks
+        chunksX = (width // chunkSize) + 1 
+        chunksY = (height // chunkSize) + 1
+        return chunksX, chunksY
+
+    # Generates augmented raster images to enhance training (input only)
+    @staticmethod
+    def gen_augmentations(ras: QgsRasterLayer):
+        pass
+
+    # Normalizes data values (input only)
+    @staticmethod
+    def normalize(arr: np.ndarray) -> np.ndarray:
+        pass

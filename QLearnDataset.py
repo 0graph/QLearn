@@ -4,7 +4,6 @@ from torch.utils.data import Dataset
 import numpy as np
 import numpy.ma as ma
 from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsProcessingUtils, QgsRasterDataProvider, QgsRectangle, QgsRasterBlock, Qgis
-from .QLearnPreprocessing import QPreprocessing
 from .QLearnUtils import QUtils
 
 
@@ -21,7 +20,6 @@ class QDataset(Dataset):
         self.target_rasters = target_rasters
         self.context = context
         self.feedback = feedback
-        self.preprocessor = QPreprocessing(self.context,self.feedback, args)
         self.chunk_indices = []                                     # Indices of each chunk for each raster in aligned_rasters
         self.aligned_rasters = []                                   # The list of aligned raster filenames
         self.chunkSize = args["CHUNK_SIZE"]                         # Split Images into Chunks of this size
@@ -42,7 +40,7 @@ class QDataset(Dataset):
         for i,(train_ras, targ_ras) in enumerate(zip(training_rasters, target_rasters)):
             self.feedback.pushInfo(f"Raster Set {i}: [Training: {train_ras.name()},Target: {targ_ras.name()}] Bands: {train_ras.bandCount()}")
 
-            success, train_ras_align, targ_ras_align = self.preprocessor.alignRasters(train_ras, targ_ras)
+            success, train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, self.feedback)
 
             if(not success or targ_ras_align.bandCount() > 1):
                 self.feedback.pushWarning(f"Error: Could not align rasters {train_ras.name(),targ_ras.name()}")
@@ -60,7 +58,7 @@ class QDataset(Dataset):
         for i, (train_ras_f, targ_ras_f) in enumerate(self.aligned_rasters):
             train_ras = QgsRasterLayer(train_ras_f)
             targ_ras = QgsRasterLayer(targ_ras_f)
-            chX, chY = self.preprocessor.calculate_chunks(train_ras)
+            chX, chY = QUtils.calculate_chunks(train_ras, self.chunkSize)
             self.chunk_indices.extend([(i, x, y) for x in range(chX) for y in range(chY)])
             # Add Class mappings from aligned rasters
             if self.do_class_mapping:

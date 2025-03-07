@@ -114,7 +114,8 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFileDestination(
                 self.OUTPUT_MODEL,
-                self.tr("Output model location")
+                self.tr("Output model location"),
+                fileFilter='PyTorch Model(*.pth)'
             )
         )
 
