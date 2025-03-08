@@ -1,8 +1,10 @@
 from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingContext, Qgis, QgsRasterFileWriter
 from qgis.analysis import QgsAlignRaster
 from qgis import processing
-from torch import optim
+from torch import optim, tensor
+import torch
 import numpy as np
+
 
 class QUtils:
     @staticmethod
@@ -101,7 +103,34 @@ class QUtils:
     def gen_augmentations(ras: QgsRasterLayer):
         pass
 
+    import torch
+
     # Normalizes data values (input only)
     @staticmethod
-    def normalize(arr: np.ndarray) -> np.ndarray:
-        pass
+    def normalize(tensor: torch.Tensor, NODATA: float) -> torch.Tensor:
+        if tensor.ndim == 2:  # Single-band raster
+            # Mask out NODATA values
+            nodataMask = tensor != NODATA 
+            valid_values = tensor[nodataMask]
+
+            # If there are any valid values -> normalize
+            if valid_values.numel() > 0:  
+                min_val, max_val = valid_values.min(), valid_values.max()
+                tensor[nodataMask] = (tensor[nodataMask] - min_val) / (max_val - min_val)
+
+        elif tensor.ndim == 3:  # Multi-band raster
+            for i in range(tensor.shape[0]):  # Normalize each band separately
+                # Mask out NODATA values
+                nodataMask = tensor[i] != NODATA
+                valid_values = tensor[i][nodataMask]
+
+                # If there are any valid values -> normalize
+                if valid_values.numel() > 0:
+                    min_val, max_val = valid_values.min(), valid_values.max()
+                    tensor[i][nodataMask] = (tensor[i][nodataMask] - min_val) / (max_val - min_val)
+                    
+        else:
+            raise ValueError("Input tensor must have 2 or 3 dimensions")
+
+        return tensor
+
