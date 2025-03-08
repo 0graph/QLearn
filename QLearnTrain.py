@@ -72,7 +72,7 @@ class QUNetTrainer:
         )
 
         self.val_dl = DataLoader(
-            self.train_dataset,
+            self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=0
@@ -83,6 +83,7 @@ class QUNetTrainer:
         self.model.train()
         metrics = TrainingMetrics(loss=0.0)
         curr_accuracy = None
+        total_samples = 0
 
         for images, targets in self.train_dl:
             
@@ -108,17 +109,19 @@ class QUNetTrainer:
             if self.task == "classification":
                 # Calculate the batch's accuracy and multiply it by the number of items
                 metrics.accuracy += self.calculate_pred_accuracy(outputs, targets) * images.size(0)
+                total_samples += images.size(0)
 
 
         # Finalize the accuracy calculations
         metrics.loss /= len(self.train_dl) # average loss per batch of chunks
-        metrics.accuracy /= len(self.train_dl.dataset) # average accuracy per chunk
+        metrics.accuracy /= total_samples # average accuracy per chunk
         return metrics
     
     # Execute a single epoch of validation
     def val_epoch(self):
         self.model.eval()
         metrics = TrainingMetrics(loss=0.0)
+        total_samples = 0
 
         with torch.no_grad():
              for images, targets in self.val_dl:
@@ -139,9 +142,10 @@ class QUNetTrainer:
                 if self.task == "classification":
                     # Calculate the batch's accuracy and multiply it by the number of items
                     metrics.accuracy += self.calculate_pred_accuracy(outputs, targets) * images.size(0)
+                    total_samples += images.size(0)
 
         metrics.loss /= len(self.train_dl) # average loss per batch of chunks
-        metrics.accuracy /= len(self.train_dl.dataset) # average accuracy per chunk
+        metrics.accuracy /= total_samples # average accuracy per chunk
         return metrics
 
     def train(self):
