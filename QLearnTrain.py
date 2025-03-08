@@ -51,7 +51,7 @@ class QUNetTrainer:
                 checkpoint = torch.load(curr_model_path)
                 self.model.load_state_dict(checkpoint["model_states"])
                 self.optimizer.load_state_dict(checkpoint["optimizer"])
-                #self.scheduler.load_state_dict(checkpoint["scheduler"])
+                self.scheduler.load_state_dict(checkpoint["scheduler"])
             except Exception as e:
                 self.feedback.pushInfo(f"Exception: {e} - failed to load model from: {curr_model_path} - data is invalid.")
         else:
@@ -62,8 +62,8 @@ class QUNetTrainer:
         # Optimizer
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate) 
         # Reduce Learning Rate on Plateau
-        #self.scheduler = optim.lr_scheduler.ReduceLROnPlateau( 
-        #    self.optimizer, mode='min', factor=0.1, patience=2)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau( 
+            self.optimizer, mode='min', factor=0.1, patience=4,min_lr=1e-6)
         # CrossEntropyLosss if Classification, MSELoss otherwise
         self.criterion = (nn.CrossEntropyLoss(ignore_index=self.NODATA) 
                 if self.task == "classification" else nn.MSELoss())
@@ -128,6 +128,7 @@ class QUNetTrainer:
             # Backpropagate loss
             self.optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
 
             # Calculate metrics
@@ -195,7 +196,7 @@ class QUNetTrainer:
                 return
 
             self.log_progress(epoch,train_metrics,val_metrics)
-            #self.scheduler.step(val_metrics.loss)
+            self.scheduler.step(val_metrics.loss)
             
 
         self.feedback.pushInfo("Training Finished!")
@@ -255,8 +256,8 @@ class QUNetTrainer:
                 "out_sz": (self.dataset.chunkSize, self.dataset.chunkSize),
             },
             "optimizer": self.optimizer.state_dict(),
-            "model_states": self.model.state_dict()
-            #"scheduler": self.scheduler.state_dict()
+            "model_states": self.model.state_dict(),
+            "scheduler": self.scheduler.state_dict()
         }
 
         torch.save(checkpoint, self.model_output_location)
