@@ -6,6 +6,7 @@ import torch.optim as optim
 import torch.nn as nn
 from qgis.core import QgsProcessingFeedback
 from dataclasses import dataclass
+import os
 
 @dataclass
 class TrainingMetrics:
@@ -13,7 +14,7 @@ class TrainingMetrics:
     accuracy: float = 0.0
 
 class QUNetTrainer:
-    def __init__(self, dataset: QDataset, output_loc: str, feedback: QgsProcessingFeedback, args: dict = dict()):
+    def __init__(self, dataset: QDataset, output_loc: str, feedback: QgsProcessingFeedback, args: dict = dict(), curr_model_path: str = ""):
 
         # Set Training Arguments
         self.dataset = dataset                                          # Dataset used for DataLoader
@@ -33,28 +34,52 @@ class QUNetTrainer:
         self.setup_dataloaders(self.dataset)
         self.setup_OSL()
 
+        self.try_loading_model(curr_model_path)
+
         self.feedback.pushInfo(f"Number of Classes: {self.n_classes} detected.")
 
+
+    # try loading states of current model and optimizers to continue training
+    def try_loading_model(self, curr_model_path: str):
+        # no model to load
+        if curr_model_path == "":
+            return
+
+        # try loading model states
+        if os.path.isfile(curr_model_path):
+            try:
+                checkpoint = torch.load(curr_model_path)
+                self.model.load_state_dict(checkpoint["model_states"])
+                self.optimizer.load_state_dict(checkpoint["optimizer"])
+                #self.scheduler.load_state_dict(checkpoint["scheduler"])
+            except Exception as e:
+                self.feedback.pushInfo(f"Exception: {e} - failed to load model from: {curr_model_path} - data is invalid.")
+        else:
+            self.feedback.pushInfo(f"Failed to load model from: {curr_model_path}. starting from scratch.")
 
     # Setup the optimizer, scheduler, and loss function
     def setup_OSL(self) -> None:
         # Optimizer
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate) 
         # Reduce Learning Rate on Plateau
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau( 
-            self.optimizer, mode='min', factor=0.1, patience=2)
+        #self.scheduler = optim.lr_scheduler.ReduceLROnPlateau( 
+        #    self.optimizer, mode='min', factor=0.1, patience=2)
         # CrossEntropyLosss if Classification, MSELoss otherwise
         self.criterion = (nn.CrossEntropyLoss(ignore_index=self.NODATA) 
                 if self.task == "classification" else nn.MSELoss())
 
     # setup the UNet model parameters
     def setup_model(self) -> None:
+        self.mbase_channels=64
+        self.mdepth=4
+        self.mretain_dim=True
+
         self.model: QUNet = QUNet(                                      # UNet Model Init
             in_channels=self.dataset.bands,                             # Number of bands in input image
-            base_channels=64,                                           #
-            depth=4,                                                    # Depth of UNET, higher depth = longer training but more complex pattern recognition
+            base_channels=self.mbase_channels,                                           #
+            depth=self.mdepth,                                                    # Depth of UNET, higher depth = longer training but more complex pattern recognition
             num_class=self.n_classes,                                   # Number of classes to generate for output
-            retain_dim=True,                                            #
+            retain_dim=self.mretain_dim,                                            #
             out_sz=(self.dataset.chunkSize, self.dataset.chunkSize)     # Chunk Size
         ).to(self.device)                                               # Set device to be used for processing
 
@@ -150,7 +175,7 @@ class QUNetTrainer:
                     total_valid += valid
 
         # Finalize the accuracy calculations
-        metrics.loss = total_loss / len(self.train_dl) # average loss per batch of chunks
+        metrics.loss = total_loss / len(self.val_dl) # average loss per batch of chunks
         if self.task == "classification":
             metrics.accuracy = total_correct / total_valid if total_valid > 0 else 0.0
 
@@ -170,7 +195,7 @@ class QUNetTrainer:
                 return
 
             self.log_progress(epoch,train_metrics,val_metrics)
-            self.scheduler.step(val_metrics.loss)
+            #self.scheduler.step(val_metrics.loss)
             
 
         self.feedback.pushInfo("Training Finished!")
@@ -220,5 +245,19 @@ class QUNetTrainer:
         return correct, valid_pixels
 
     def save_model(self):
-        self.feedback.pushInfo(f"Saved model to {self.model_output_location}")
-        torch.save(self.model, self.model_output_location)
+        checkpoint = {
+            "model_params": {
+                "in_channels": self.dataset.bands,
+                "base_channels": self.mbase_channels,
+                "depth": self.mdepth,
+                "num_class": self.n_classes,
+                "retain_dim": self.mretain_dim,
+                "out_sz": (self.dataset.chunkSize, self.dataset.chunkSize),
+            },
+            "optimizer": self.optimizer.state_dict(),
+            "model_states": self.model.state_dict()
+            #"scheduler": self.scheduler.state_dict()
+        }
+
+        torch.save(checkpoint, self.model_output_location)
+    

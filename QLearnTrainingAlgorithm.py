@@ -37,6 +37,7 @@ from qgis.core import (Qgis,
                        QgsProcessingParameterMultipleLayers,
                        QgsProcessingParameterFileDestination,
                        QgsProcessingParameterRasterLayer,
+                       QgsProcessingParameterFile,
                        QgsProcessingParameterNumber)
 
 from .QLearnDataset import QDataset
@@ -72,6 +73,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     INPUT_TARGET = 'INPUT_TARGET_RASTER'
     ARGS_NODATA = 'ARGS_NODATA'
     ARGS_EPOCHS = 'ARGS_EPOCH'
+    INPUT_MODEL = 'INPUT_MODEL'
 
     def initAlgorithm(self, config):
         """
@@ -107,7 +109,16 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.ARGS_NODATA,
                 self.tr("NODATA Value"),
-                defaultValue=0
+                defaultValue=-100
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterFile(
+                self.INPUT_MODEL,
+                self.tr('Model to continue training on'),
+                fileFilter='PyTorch Model(*.pth)',
+                optional=True
             )
         )
 
@@ -128,6 +139,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         # Fetch Input Parameters from Dict
         training_rasters = self.parameterAsLayerList(parameters, self.INPUT_TRAIN, context)
         target_rasters = self.parameterAsLayerList(parameters, self.INPUT_TARGET, context)
+        current_model = self.parameterAsFile(parameters,self.INPUT_MODEL, context)
         model_save_loc = self.parameterAsFileOutput(parameters, self.OUTPUT_MODEL, context)
         n_epochs = self.parameterAsInt(parameters,self.ARGS_EPOCHS, context)
         nodata = self.parameterAsInt(parameters,self.ARGS_NODATA, context)

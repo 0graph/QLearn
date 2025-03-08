@@ -7,13 +7,29 @@ import numpy as np
 class QNNPredictor:
     def __init__(self, modelPath: str, context: QgsProcessingContext, feedback: QgsProcessingFeedback, args: dict = dict()):
         torch.serialization.add_safe_globals([QUNet, QUBlock, QUEncoder, QUDecoder])
-        self.model = torch.load(modelPath, weights_only=False)
+        checkpoint = torch.load(modelPath, weights_only=False)
+        
+        self.setup_model(checkpoint["model_params"], checkpoint["model_states"])
+
         self.feedback = feedback
         self.feedback.pushInfo(f"Model: {self.model}")
-        self.chunkSize = args["CHUNK_SIZE"]
+        self.chunkSize = checkpoint["model_params"]["out_sz"][0]
         self.NODATA = args["NODATA"]
         self.args = args
         self.context = context
+
+    def setup_model(self, m_params: dict, model_state_dict: dict) -> None:
+
+        self.model: QUNet = QUNet(                                      # UNet Model Init
+            in_channels=m_params["in_channels"],                             # Number of bands in input image
+            base_channels=m_params["base_channels"],                                           #
+            depth=m_params["depth"],                                                    # Depth of UNET, higher depth = longer training but more complex pattern recognition
+            num_class=m_params["num_class"],                                   # Number of classes to generate for output
+            retain_dim=m_params["retain_dim"],                                            #
+            out_sz=m_params["out_sz"]     # Chunk Size
+        ) 
+
+        self.model.load_state_dict(model_state_dict)
 
     def predict(self, in_raster: QgsRasterLayer, out_ras_path: str) -> QgsRasterLayer:
 
