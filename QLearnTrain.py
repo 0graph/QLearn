@@ -82,8 +82,9 @@ class QUNetTrainer:
     def train_epoch(self) -> TrainingMetrics:
         self.model.train()
         metrics = TrainingMetrics(loss=0.0)
-        curr_accuracy = None
-        total_samples = 0
+        total_loss = 0.0
+        total_correct = 0
+        total_valid = 0
 
         for images, targets in self.train_dl:
             
@@ -105,23 +106,27 @@ class QUNetTrainer:
             self.optimizer.step()
 
             # Calculate metrics
-            metrics.loss += loss.item()
+            total_loss += loss.item()
             if self.task == "classification":
-                # Calculate the batch's accuracy and multiply it by the number of items
-                metrics.accuracy += self.calculate_pred_accuracy(outputs, targets) * images.size(0)
-                total_samples += images.size(0)
+               correct, valid = self.calculate_pred_accuracy(outputs, targets)
+               total_correct += correct
+               total_valid += valid
 
 
         # Finalize the accuracy calculations
-        metrics.loss /= len(self.train_dl) # average loss per batch of chunks
-        metrics.accuracy /= total_samples # average accuracy per chunk
+        metrics.loss = total_loss / len(self.train_dl) # average loss per batch of chunks
+        if self.task == "classification":
+            metrics.accuracy = total_correct / total_valid if total_valid > 0 else 0.0
+
         return metrics
     
     # Execute a single epoch of validation
     def val_epoch(self):
         self.model.eval()
         metrics = TrainingMetrics(loss=0.0)
-        total_samples = 0
+        total_loss = 0.0
+        total_correct = 0
+        total_valid = 0
 
         with torch.no_grad():
              for images, targets in self.val_dl:
@@ -138,14 +143,17 @@ class QUNetTrainer:
                 loss = self.criterion(outputs, targets)
 
                 # calculate metrics
-                metrics.loss += loss.item()
+                total_loss += loss.item()
                 if self.task == "classification":
-                    # Calculate the batch's accuracy and multiply it by the number of items
-                    metrics.accuracy += self.calculate_pred_accuracy(outputs, targets) * images.size(0)
-                    total_samples += images.size(0)
+                    correct, valid = self.calculate_pred_accuracy(outputs, targets)
+                    total_correct += correct
+                    total_valid += valid
 
-        metrics.loss /= len(self.train_dl) # average loss per batch of chunks
-        metrics.accuracy /= total_samples # average accuracy per chunk
+        # Finalize the accuracy calculations
+        metrics.loss = total_loss / len(self.train_dl) # average loss per batch of chunks
+        if self.task == "classification":
+            metrics.accuracy = total_correct / total_valid if total_valid > 0 else 0.0
+
         return metrics
 
     def train(self):
@@ -198,15 +206,18 @@ class QUNetTrainer:
             targets = targets.squeeze(1)
         return targets
         
-    # compute accuracy of classification outputs
-    def calculate_pred_accuracy(self, outputs: torch.tensor, targets: torch.tensor) -> float:
-        mask = targets != self.NODATA # Mask NODATA values to ensure they're not in accuracy calc
-        if not mask.any(): # Avoid Divide by 0 if all values are NODATA
-            return 0.0
+    # compute correct and valid pixels
+    def calculate_pred_accuracy(self, outputs: torch.Tensor, targets: torch.Tensor) -> tuple[int, int]:
+        mask = targets != self.NODATA  # Mask NODATA values
+        valid_pixels = mask.sum().item()
         
-        preds = outputs.argmax(dim=1) # the predicted classification
-        # returns the percentage of predictions that were equal to the actual value
-        return (preds[mask] == targets[mask]).float().mean().item()
+        # Early exit
+        if valid_pixels == 0:
+            return 0, 0
+        
+        preds = outputs.argmax(dim=1)
+        correct = (preds[mask] == targets[mask]).sum().item()
+        return correct, valid_pixels
 
     def save_model(self):
         self.feedback.pushInfo(f"Saved model to {self.model_output_location}")
