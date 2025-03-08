@@ -32,6 +32,8 @@ A QGIS Plugin allowing for neural network model training and prediction using th
 - `Cancelling:` should be able to cancel in between chunks not just in between epochs
 - `Multithreading:` multithreading causes issues with training -> find workaround to allow multithreading.
   - could temporarily save numpy arrays to disk instead of using images directly
+- `AlignRasters:` using memory: for temporary file storage does not work on some machines (tested on GEOG Lab Computers)
+- `NoThreading Flag:` Dosent exist on QGIS 3.34 -> if multithreading can be fixed this would no longer be an issue
 
 
 #### Testing Needed

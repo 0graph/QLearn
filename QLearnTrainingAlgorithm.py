@@ -164,7 +164,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
 
         # Setup Dataset
         dataset = QDataset(training_rasters, target_rasters,context,feedback,args)
-        trainer = QUNetTrainer(dataset,model_save_loc,feedback,args)
+        trainer = QUNetTrainer(dataset,model_save_loc,feedback,args, current_model)
         try:
             trainer.train()
         except Exception as e:

@@ -79,7 +79,7 @@ class QDataset(Dataset):
         target_tensor = torch.tensor(target_chunk, dtype=torch.float32)
 
         # Return normalized training data and remapped target data
-        return QUtils.normalize(training_tensor), self.remap_classes(target_tensor)
+        return QUtils.normalize(training_tensor, self.NODATA), self.remap_classes(target_tensor)
     
     # preform class remapping based on dictionary (target raster)
     def remap_classes(self, tensor : torch.tensor) -> torch.tensor:

@@ -41,6 +41,7 @@ class QUNetTrainer:
 
     # try loading states of current model and optimizers to continue training
     def try_loading_model(self, curr_model_path: str):
+        self.feedback.pushInfo(f"loading saved model from: {curr_model_path}")
         # no model to load
         if curr_model_path == "":
             return
@@ -52,6 +53,11 @@ class QUNetTrainer:
                 self.model.load_state_dict(checkpoint["model_states"])
                 self.optimizer.load_state_dict(checkpoint["optimizer"])
                 self.scheduler.load_state_dict(checkpoint["scheduler"])
+                
+                # Debug, can remove later
+                self.feedback.pushInfo(f"Model State: {self.model.state_dict()}")
+                self.feedback.pushInfo(f"Optimizer State: {self.optimizer.state_dict()}")
+                self.feedback.pushInfo(f"Scheduler State: {self.scheduler.state_dict()}")
             except Exception as e:
                 self.feedback.pushInfo(f"Exception: {e} - failed to load model from: {curr_model_path} - data is invalid.")
         else:
