@@ -2,10 +2,11 @@
 A QGIS Plugin allowing for neural network model training and prediction using the UNet Architecture
 
 #### Dependencies
-- PyTorch
-  - Close QGIS and open an administrator command prompt
-  - Navigate to the QGIS Python Folder
-  - Run `C:\Program Files\YourQGISFolder\apps\PythonVersion> .\Scripts\pip.exe install --target .\Lib\site-packages\ torch`
+- Torch, TorchVision
+  - Close QGIS and open the OSGeo4W shell
+    - If you did not install QGIS using OSGeo4W it is reccomended you reinstall with OSGeo4W
+  - Run `pip3 install torch torchvision`
+  - Once installed the plugin should be able to run
 
 #### Training
 - Inputs:

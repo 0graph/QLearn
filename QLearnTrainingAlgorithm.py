@@ -144,7 +144,8 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             "TRAIN_TYPE": "classification", # classification or regression
             "GENERATE_AUGMENTED": False,
             "NORMALIZE": False,
-            "CLASS_REMAPPING": True
+            "CLASS_REMAPPING": True,
+            "VALIDATION_SPLIT": 0.2
         }
 
         feedback.pushInfo(f"Args: {args}")

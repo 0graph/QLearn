@@ -35,8 +35,10 @@ class QUDecoder(nn.Module):
         super().__init__()
         self.chs         = chs
         self.upconvs = nn.ModuleList([
-            nn.ConvTranspose2d(chs[i], chs[i+1], 2, 2) 
-            for i in range(len(chs)-1)
+            nn.Sequential( # Info: https://distill.pub/2016/deconv-checkerboard/
+                nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+                nn.Conv2d(chs[i], chs[i+1], kernel_size=3, padding=1)
+            ) for i in range(len(chs)-1)
         ])
         self.dec_blocks = nn.ModuleList(
             [QUBlock(chs[i], chs[i+1]) 
