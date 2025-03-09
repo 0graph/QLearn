@@ -55,9 +55,9 @@ class QUNetTrainer:
                 self.scheduler.load_state_dict(checkpoint["scheduler"])
                 
                 # Debug, can remove later
-                self.feedback.pushInfo(f"Model State: {self.model.state_dict()}")
-                self.feedback.pushInfo(f"Optimizer State: {self.optimizer.state_dict()}")
-                self.feedback.pushInfo(f"Scheduler State: {self.scheduler.state_dict()}")
+                #self.feedback.pushInfo(f"Model State: {self.model.state_dict()}")
+                #self.feedback.pushInfo(f"Optimizer State: {self.optimizer.state_dict()}")
+                #self.feedback.pushInfo(f"Scheduler State: {self.scheduler.state_dict()}")
             except Exception as e:
                 self.feedback.pushInfo(f"Exception: {e} - failed to load model from: {curr_model_path} - data is invalid.")
         else:
