@@ -3,8 +3,10 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 import numpy.ma as ma
-from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsProcessingUtils, QgsRasterDataProvider, QgsRectangle, QgsRasterBlock, Qgis
+from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsRasterDataProvider, QgsRectangle, QgsRasterBlock, Qgis
 from .QLearnUtils import QUtils
+
+from .QRasterNumpy import *
 
 
 # Class format used by pytorch dataloader
@@ -40,19 +42,13 @@ class QDataset(Dataset):
         for i,(train_ras, targ_ras) in enumerate(zip(training_rasters, target_rasters)):
             self.feedback.pushInfo(f"Raster Set {i}: [Training: {train_ras.name()},Target: {targ_ras.name()}] Bands: {train_ras.bandCount()}")
 
-            success, train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, self.feedback)
+            success, train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, i, self.feedback, self.context)
 
-            if(not success or targ_ras_align.bandCount() > 1):
+            if(not success or targ_ras.bandCount() > 1):
                 self.feedback.pushWarning(f"Error: Could not align rasters {train_ras.name(),targ_ras.name()}")
             else:
                 self.bands = min(self.bands, train_ras.bandCount()) # Set band count to lowest of any raster in list
-                
-                # Save to file so rasters dont exceeed memory capacity
-                training_aligned_filename = QgsProcessingUtils.generateTempFilename(f"training_aligned_{i}.tif")
-                target_aligned_filename = QgsProcessingUtils.generateTempFilename(f"target_aligned_{i}.tif")
-                QUtils.setRasterDestination(train_ras_align, training_aligned_filename,self.feedback,self.context)
-                QUtils.setRasterDestination(targ_ras_align,target_aligned_filename,self.feedback,self.context)
-                self.aligned_rasters.append((training_aligned_filename, target_aligned_filename))
+                self.aligned_rasters.append((train_ras_align, targ_ras_align))
 
         # Calculate total number of chunks across all rasters to be used by PyTorch DataLoader
         for i, (train_ras_f, targ_ras_f) in enumerate(self.aligned_rasters):
@@ -98,6 +94,11 @@ class QDataset(Dataset):
         
     # update class mapping with new unique values
     def update_class_mapping(self, arr : np.array):
+
+        # Remove masked values from the array -> or TypeError: unhashable type: 'MaskedConstant'
+        if isinstance(arr, np.ma.MaskedArray):
+            arr = arr[~arr.mask]
+
         unique_classes = np.unique(arr)
 
         self.class_mapping = {i: cls for i, cls in enumerate(unique_classes)}
@@ -106,7 +107,7 @@ class QDataset(Dataset):
         self.feedback.pushInfo(f"Updated Class Mapping: {self.class_mapping}")  # Debugging statement
 
     def read_chunk(self, ras_filename: str, chX: int, chY: int) -> np.ndarray:
-        raster = QgsRasterLayer(ras_filename)
+        raster = QgsRasterLayer(ras_filename) # Fails on multithread
         raster_band_count = min(self.bands,raster.bandCount())
 
         

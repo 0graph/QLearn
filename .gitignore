@@ -1,0 +1,11 @@
+__pycache__/__init__.cpython-312.pyc
+__pycache__/QLearn_provider.cpython-312.pyc
+__pycache__/QLearn.cpython-312.pyc
+__pycache__/QLearnDataset.cpython-312.pyc
+__pycache__/QLearnPredict.cpython-312.pyc
+__pycache__/QLearnPredictionAlgorithm.cpython-312.pyc
+__pycache__/QLearnTrain.cpython-312.pyc
+__pycache__/QLearnTrainingAlgorithm.cpython-312.pyc
+__pycache__/QLearnUNet.cpython-312.pyc
+__pycache__/QLearnUtils.cpython-312.pyc
+__pycache__/QRasterNumpy.cpython-312.pyc
