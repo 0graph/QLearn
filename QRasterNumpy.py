@@ -36,8 +36,9 @@ try:
       src_array = src_array.reshape((self.height(), self.width()))
       if use_masking:
          if not self.hasNoDataValue():
-      	    # Default to 0 as noDataValue if none is set
-            no_data_value = 0
+      	    # Default to -100 as noDataValue if none is set
+            # Note: changed this from the QGIS implementation as I'm not sure why we'd want to mask out 0s if there is no NODATA value set
+            no_data_value = -100
          else:
             no_data_value = self.noDataValue()
          return _numpy.ma.masked_equal(src_array, no_data_value)
