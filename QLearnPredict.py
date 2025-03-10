@@ -15,6 +15,7 @@ class QNNPredictor:
         self.feedback.pushInfo(f"Model: {self.model}")
         self.chunkSize = checkpoint["model_params"]["out_sz"][0]
         self.NODATA = args["NODATA"]
+        self.task = args["TASK_TYPE"]
         self.args = args
         self.context = context
 
@@ -37,55 +38,22 @@ class QNNPredictor:
         chX, chY = QUtils.calculate_chunks(in_raster, self.chunkSize)
         raster_data: np.ndarray = in_raster.as_numpy()
         raster_data = raster_data.transpose(0, 2, 1) # [y, x] -> [x, y]
+        width, height = in_raster.width(), in_raster.height()
 
-        #self.feedback.pushInfo(f"Raster Data Shape: {raster_data.shape.__str__()} Data {raster_data}")
-
-        # Create output raster based on input raster
-        out_raster_data = np.ndarray(shape=(in_raster.width(),in_raster.height()),dtype=raster_data.dtype)
-        out_raster_data.fill(1000.0) # should be filled with chosen nodata value
+        # Create output raster based on input raster and pre-fill with NODATA values
+        out_raster_data = np.ndarray(shape=(in_raster.width(),in_raster.height()),dtype=raster_data.dtype).fill(self.NODATA)
 
         self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{chX},{chY}] DataType[{raster_data.dtype.__str__()}] Dimensions[{in_raster.width()},{in_raster.height()}]")
+        t_iterations = chX * chY # for setting progress
     
         self.model.eval()  # Ensure model is in evaluation mode
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.to(device)
-
-        t_iterations = chX * chY
-
         for iX in range(chX):
             for iY in range(chY):
                 if self.feedback.isCanceled():
                     return
 
-                chunk = self.read_chunk(raster_data, iX, iY)
-                
-                # Debug
-                #self.feedback.pushInfo(f"Chunk Shape: {chunk.shape.__str__()} Data {chunk}")
-
-                input_tensor = torch.tensor(chunk.astype(np.float32), dtype=torch.float32).unsqueeze(0).to(device)
-
-                with torch.no_grad():
-                    output = self.model(input_tensor)
-
-                    # Get predicted values
-                    prediction = torch.argmax(output, dim=1)
-                    prediction = prediction.squeeze().cpu().numpy() 
-                    probabilities = torch.softmax(output, dim=1)
-                    max_probs, preds = torch.max(probabilities, dim=1)
-
-                    # Print out sample of data for debugging
-                    self.feedback.pushInfo(f"Unique Classes: {preds.unique()} \nProbabilities: {max_probs.flatten()[:20]} \nPrediction: {preds.flatten()[:20]}")
-                    # self.feedback.pushInfo(f"Prediction Shape: {prediction.shape.__str__()} Data {prediction}")
-
-                    # Calculate indices to place data in
-                    x_start, x_end = self.chunkSize * iX, self.chunkSize * (iX + 1)
-                    y_start, y_end = self.chunkSize * iY, self.chunkSize * (iY + 1)
-                    x_end = min(x_end, in_raster.width())
-                    y_end = min(y_end, in_raster.height())
-                    
-                    # Save predictions to out_raster
-                    out_raster_data[x_start:x_end, y_start:y_end] = prediction[:x_end - x_start, :y_end - y_start]
+                # reads a chunk from an image and uses the trained model to predict an output value
+                self.predict_chunk(raster_data,out_raster_data,iX,iY,width,height)       
                 
                 # set progress for the chunk
                 self.feedback.setProgress((((iX * chY) + iY) / t_iterations)*100)
@@ -93,8 +61,48 @@ class QNNPredictor:
         # Write the final raster data
         self.write_raster_data(in_raster, out_ras_path, out_raster_data)
         return QgsRasterLayer(out_ras_path)
+    
 
+    # predicts a chunk and writes predictions to output
+    def predict_chunk(self, raster_data: np.ndarray, out_raster_data: np.ndarray, iX: int, iY: int, width: int, height: int):
+        chunk = self.read_chunk(raster_data, iX, iY)
+        # TODO: Normalize prediction input data if normalization was done in training
+        input_tensor = torch.tensor(chunk.astype(np.float32), dtype=torch.float32).unsqueeze(0)
 
+        with torch.no_grad():
+            output = self.model(input_tensor)
+            prediction = np.ndarray()
+
+            # Get predictions
+            if self.task == "classification":
+
+                probabilities = torch.softmax(output, dim=1)
+                max_probs, prediction = torch.max(probabilities, dim=1)
+                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Class Counts [{prediction.unique(return_counts=True)}] - Mean Conf [{max_probs.mean().numel()}]")
+                # Write prediction to output data including probabilities
+                self.write_model_output(prediction,out_raster_data,iX,iY,width,height,max_probs)
+
+            else: # regression
+
+                prediction = output # model output values are used directly
+                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Mean Value [{prediction.mean().numel()}]")
+                # Write prediction to output data
+                self.write_model_output(prediction,out_raster_data,iX,iY,width,height)
+    
+
+    # writes the prediction output to the correct slice of the output data
+    def write_model_output(self, prediction: np.ndarray, out_data: np.ndarray, iX: int, iY: int, width: int, height: int, probabilities = None):
+        if probabilities is not None:
+            pass #TODO: rewrite predictions that do not meet confidence level with NODATA value using probabilities
+
+        # Calculate indices to place data in
+        x_start, x_end = self.chunkSize * iX, self.chunkSize * (iX + 1)
+        y_start, y_end = self.chunkSize * iY, self.chunkSize * (iY + 1)
+        x_end = min(x_end, width)
+        y_end = min(y_end, height)
+        
+        # Save predictions to out_raster
+        out_data[x_start:x_end, y_start:y_end] = prediction[:x_end - x_start, :y_end - y_start]
 
     def write_raster_data(self, in_raster: QgsRasterLayer, out_raster_path: str, data: np.ndarray) -> bool:
         
@@ -113,10 +121,10 @@ class QNNPredictor:
 
         provider = out_raster.dataProvider()
 
-        self.feedback.pushInfo(f"Provider URI: {provider.dataSourceUri()} Raster SRC: {out_raster.source()} Provider Bands: {provider.bandCount()} band1desc:{provider.bandDescription(1)}")
-        
-        self.feedback.pushInfo(f"DataShape: {data.shape.__str__()} RasterShape: ({provider.xSize()},{provider.ySize()})")
-        self.feedback.pushInfo(f"Mean: {data.mean()}, Data: {data}")
+        # Debug Statements
+        #self.feedback.pushInfo(f"Provider URI: {provider.dataSourceUri()} Raster SRC: {out_raster.source()} Provider Bands: {provider.bandCount()} band1desc:{provider.bandDescription(1)}")
+        #self.feedback.pushInfo(f"DataShape: {data.shape.__str__()} RasterShape: ({provider.xSize()},{provider.ySize()})")
+        #self.feedback.pushInfo(f"Mean: {data.mean()}, Data: {data}")
 
         block = provider.block(1,provider.extent(),provider.xSize(),provider.ySize())
         

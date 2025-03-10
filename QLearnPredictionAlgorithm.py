@@ -114,7 +114,8 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
             "CONFIDENCE": 0.5,
             "CHUNK_SIZE": 256,
             "NODATA": 0,
-            "NORMALIZE": False
+            "NORMALIZE": False,
+            "TASK_TYPE": "regression"
         }
 
         feedback.pushInfo(f"Args: {args}")
