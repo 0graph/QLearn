@@ -25,6 +25,7 @@ class QDataset(Dataset):
         self.chunkSize = args["CHUNK_SIZE"]                         # Split Images into Chunks of this size
         self.NODATA = args["NODATA"]                                # NoData Value for rasters
         self.bands = args["BANDS"]                                  # Calculated from each training raster, will use the lowest value. 
+        self.task = args["TRAIN_TYPE"]                              # regression or classification
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
         self.do_class_mapping = args["CLASS_REMAPPING"]             # Weather to preform automatic class remapping
@@ -60,8 +61,9 @@ class QDataset(Dataset):
             targ_ras = QgsRasterLayer(targ_ras_f)
             chX, chY = QUtils.calculate_chunks(train_ras, self.chunkSize)
             self.chunk_indices.extend([(i, x, y) for x in range(chX) for y in range(chY)])
+
             # Add Class mappings from aligned rasters
-            if self.do_class_mapping:
+            if self.task == "classification" and self.do_class_mapping:
                 self.update_class_mapping(targ_ras.as_numpy())
 
     def __len__(self):
@@ -78,12 +80,16 @@ class QDataset(Dataset):
         training_tensor = torch.tensor(training_chunk, dtype=torch.float32)
         target_tensor = torch.tensor(target_chunk, dtype=torch.float32)
 
+        if self.task != "classification":
+            target_tensor = QUtils.normalize(target_tensor, self.NODATA)
+
+
         # Return normalized training data and remapped target data
         return QUtils.normalize(training_tensor, self.NODATA), self.remap_classes(target_tensor)
     
     # preform class remapping based on dictionary (target raster)
     def remap_classes(self, tensor : torch.tensor) -> torch.tensor:
-        if not self.do_class_mapping:
+        if not self.do_class_mapping or self.task != "classification":
             return tensor
         
         np_tensor = tensor.numpy()
