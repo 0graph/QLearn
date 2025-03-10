@@ -28,6 +28,7 @@ class QDataset(Dataset):
         self.NODATA = args["NODATA"]                                # NoData Value for rasters
         self.bands = args["BANDS"]                                  # Calculated from each training raster, will use the lowest value. 
         self.task = args["TRAIN_TYPE"]                              # regression or classification
+        self.normalize_inputs = args["NORMALIZE_INPUTS"]            # weather to normalize the input values in _getitem_
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
         self.do_class_mapping = args["CLASS_REMAPPING"]             # Weather to preform automatic class remapping
@@ -76,12 +77,11 @@ class QDataset(Dataset):
         training_tensor = torch.tensor(training_chunk, dtype=torch.float32)
         target_tensor = torch.tensor(target_chunk, dtype=torch.float32)
 
-        if self.task != "classification":
-            target_tensor = QUtils.normalize(target_tensor, self.NODATA)
-
+        if self.normalize_inputs:
+            training_tensor = QUtils.normalize(training_tensor, self.NODATA)
 
         # Return normalized training data and remapped target data
-        return QUtils.normalize(training_tensor, self.NODATA), self.remap_classes(target_tensor)
+        return training_tensor, self.remap_classes(target_tensor)
     
     # preform class remapping based on dictionary (target raster)
     def remap_classes(self, tensor : torch.tensor) -> torch.tensor:
@@ -126,6 +126,7 @@ class QDataset(Dataset):
         
         
         # Calculate chunk boundaries
+        # TODO: Refactor this
         provider = raster.dataProvider()
         xOffset = chX * self.chunkSize
         yOffset = chY * self.chunkSize
@@ -153,16 +154,15 @@ class QDataset(Dataset):
                 self.feedback.pushWarning(f"Error: Could not convert block's DataType")
 
             # NumPy create a masked numpy array from the block
+            # Note: if the block does not have a NODATA value it will use a default value for making which can cause conflicts
             m_block = block.as_numpy(use_masking = True)
             if m_block is None:
                 self.feedback.pushWarning("Failed to convert block to numpy array")
                 continue
 
-            NoDataVal = block.noDataValue() if block.hasNoDataValue() else None
-            if NoDataVal is not None:
-                m_block = np.where(m_block == NoDataVal, self.NODATA, m_block)  # Replace NODATA Values
-            m_block = np.nan_to_num(m_block, nan=self.NODATA)                   # Replace Invalid Values
-            m_block = ma.filled(m_block, self.NODATA)
+            m_block = np.nan_to_num(m_block, nan=self.NODATA)      # Replace Invalid Values
+            if block.hasNoDataValue():                             # Replace block's actual NODATA value with NODATA
+                m_block = ma.filled(m_block, self.NODATA)
             
             # self.feedback.pushInfo(f"Block ({b},{chX},{chY}): W:[{block.width()}] H:[{block.height()}] NODATA:[{NoDataVal}] SHP:[{m_block.shape.__str__()}]")
             # Assign block data to the correct slice of the data array

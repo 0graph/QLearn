@@ -31,13 +31,10 @@ __copyright__ = '(C) 2025 by Adam Bialecki'
 __revision__ = '$Format:%H$'
 
 from qgis.PyQt.QtCore import QCoreApplication
-from qgis.core import (Qgis,
-                       QgsProcessing,
-                       QgsProcessingAlgorithm,
+from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessingParameterRasterLayer,
                        QgsProcessingParameterRasterDestination,
-                       QgsProcessingParameterMultipleLayers,
-                       QgsProcessingParameterFileDestination,
+                       QgsProcessingParameterNumber,
                        QgsProcessingParameterFile)
 
 from .QLearnPredict import QNNPredictor
@@ -69,6 +66,7 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
 
     INPUT_MODEL = 'INPUT_MODEL'
     INPUT_RASTER = 'INPUT_RASTER'
+    ARGS_CONF = 'ARGS_CONF' # minimum confidence level
     OUTPUT_RASTER = 'OUTPUT_PREDICTED_RASTER'
 
     def initAlgorithm(self, config):
@@ -92,6 +90,16 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
             self.tr("PyTorch Model"))
         )
 
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.ARGS_CONF,
+                self.tr("Minimum Confidence level for predicted value (otherwise overwrite with NODATA)"),
+                defaultValue=0.0,
+                minValue=0.0,
+                max_value=1.0
+            )
+        )
+
         # Output predicted raster
         self.addParameter(
             QgsProcessingParameterRasterDestination(
@@ -108,13 +116,11 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
         iRaster = self.parameterAsRasterLayer(parameters, self.INPUT_RASTER, context)
         iModel = self.parameterAsFile(parameters,self.INPUT_MODEL,context)
         oRaster = self.parameterAsOutputLayer(parameters,self.OUTPUT_RASTER,context)
+        confidence = self.parameterAsDouble(parameters,self.ARGS_CONF, context)
 
 
         args = {
-            "CONFIDENCE": 0.5,
-            "CHUNK_SIZE": 256,
-            "NODATA": 0,
-            "NORMALIZE": False
+            "CONFIDENCE": confidence
         }
 
         feedback.pushInfo(f"Args: {args}")

@@ -20,6 +20,7 @@ A QGIS Plugin allowing for neural network model training and prediction using th
   - Model - A trained pytorch model
   - Raster - An n-band raster that you want output values predicted for
 - Outputs: A raster of predicted values for the input raster based on the trained model.
+: 
 
 #### Issues
 - `QLearnPreprocessing:`
@@ -28,26 +29,27 @@ A QGIS Plugin allowing for neural network model training and prediction using th
   - Dosent have an easy interface for selecting a pair of input and targets rasters, just two seperate lists
 - `Multithreading:` multithreading causes issues with training -> find workaround to allow multithreading.
   - could temporarily save numpy arrays to disk instead of using images directly
-- `Regression Normalization:` currently regression targets are normalized, if this is the case a mapping needs to be saved so the predictor can convert the normalized values back to the original ones
 - `Class Mappings:` class mappings should be saved in the checkpoint for retraining and for proper remapping when predicting
 - `Retraining:` if retraining is done, certain values need to be updated
   - *class mappings:* for classification the class mappings may need to be expanded
-  - *normalization mappings:* for regression the normalization may need to be expanded to account for a larger range
+    - this should be able to be done after QDataset is initialized 
 
 
 #### Testing Needed
-- `Input Data Types:` Are input raster data types being converted correctly
 - `Invalid Values:` Test raster with invalid/NaN values
-- `Regression:` is regression working properly?
-- `NODATA:` is training rasters with NODATA valuess working properly?
+- `Regression:` Is retraining working for regression
+- `NODATA:` 
+  - is training rasters with NODATA valuess working properly?
+  - will different NODATA values when retraining cause issues?
 
 
 #### Features
-- `Confidence Value:` allow confidence value to be specified for prediction
-- `Normalization:` =add option to choose weather you want to normalize the data
+- `Confidence Value:` allow confidence value to be specified for prediction (only for classification)
 - `Data Augementation:` allow option to generate n augmented rasters for training
 - `Class Weightings:` Ignore index is not enough if multiple classes should be ignored, allow training weights to be specified for each class for CrossEntropyLoss
 - `Confidence Level:` Confidence levels should be able to be specified in predict, and tensor probabilities below that should be set to the specified NODATA value
+- `Save Best Model:` To avoid overfitting, after a certain amount of time without improvement the best model can be saved
+- `Custom Parameters:` allow the user to specify custom input parameters like [learning rate, depth, dropout, etc.]
 
 #### Refactoring
 - Move WriteRasterData from QLearnPredict to QLearnUtils

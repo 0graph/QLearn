@@ -26,6 +26,8 @@ class QUNetTrainer:
         self.NODATA = args["NODATA"]
         self.batch_size = args["BATCH_SIZE"]
         self.val_split = args["VALIDATION_SPLIT"]                       # 0-1 ratio of data used for validation vs data used for training
+        self.normalize_inputs = args["NORMALIZE_INPUTS"]                # weather input values are normalized in QDataset -> save this for prediction
+        self.do_class_mapping = args["CLASS_REMAPPING"]                 # Weather to preform automatic class remapping
         self.model_output_location = output_loc                         # Where to save model file
         self.feedback = feedback                                        # For processing algorithm
                                                                         
@@ -53,11 +55,8 @@ class QUNetTrainer:
                 self.model.load_state_dict(checkpoint["model_states"])
                 self.optimizer.load_state_dict(checkpoint["optimizer"])
                 self.scheduler.load_state_dict(checkpoint["scheduler"])
-                
-                # Debug, can remove later
-                #self.feedback.pushInfo(f"Model State: {self.model.state_dict()}")
-                #self.feedback.pushInfo(f"Optimizer State: {self.optimizer.state_dict()}")
-                #self.feedback.pushInfo(f"Scheduler State: {self.scheduler.state_dict()}")
+
+                # TODO: Update class mappings
             except Exception as e:
                 self.feedback.pushInfo(f"Exception: {e} - failed to load model from: {curr_model_path} - data is invalid.")
         else:
@@ -82,19 +81,22 @@ class QUNetTrainer:
 
         self.model: QUNet = QUNet(                                      # UNet Model Init
             in_channels=self.dataset.bands,                             # Number of bands in input image
-            base_channels=self.mbase_channels,                                           #
-            depth=self.mdepth,                                                    # Depth of UNET, higher depth = longer training but more complex pattern recognition
+            base_channels=self.mbase_channels,                          #
+            depth=self.mdepth,                                          # Depth of UNET, higher depth = longer training but more complex pattern recognition
             num_class=self.n_classes,                                   # Number of classes to generate for output
-            retain_dim=self.mretain_dim,                                            #
+            retain_dim=self.mretain_dim,                                #
             out_sz=(self.dataset.chunkSize, self.dataset.chunkSize)     # Chunk Size
         ).to(self.device)                                               # Set device to be used for processing
 
     # Configure the dataloaders for training and validation based on the validation split
     def setup_dataloaders(self, dataset: QDataset) -> None:
+
+        # Calculate training & validation dataset split
         val_size = int(self.val_split * len(dataset))
         gen = torch.Generator().manual_seed(42) # for reproducible results
         self.train_dataset, self.val_dataset = random_split(dataset, [len(dataset) - val_size, val_size], generator=gen)
 
+        # Set up training data loader
         self.train_dl = DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
@@ -102,6 +104,7 @@ class QUNetTrainer:
             num_workers=0
         )
 
+        # Set up validation data loader
         self.val_dl = DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
@@ -122,7 +125,6 @@ class QUNetTrainer:
             # training was cancelled -> exit
             if self.checkCancel():
                 return
-
 
             images, targets = images.to(self.device), targets.to(self.device)
             targets = self.prepare_targets(targets) # Reshape and Convert for CrossEntropyLoss if needed
@@ -157,7 +159,11 @@ class QUNetTrainer:
 
         #self.feedback.pushInfo(f"Outputs shape: {outputs.size()} Targets shape: {targets.size()}")
 
-        mask = (targets != self.NODATA)
+        mask_targ = (targets != self.NODATA) # make mask for targets
+        mask_input = (inputs != self.NODATA) # make mask for inputs
+        # if there is a NODATA value in the targets or in the inputs we want to ignore loss on the outputs from the model for these pixels
+        mask = mask_targ & mask_input
+
 
         if self.task == "classification":
             mask_o = mask.unsqueeze(1).expand_as(outputs)  # fix shape [batch, n_classes, height, width]
@@ -279,7 +285,15 @@ class QUNetTrainer:
                 "depth": self.mdepth,
                 "num_class": self.n_classes,
                 "retain_dim": self.mretain_dim,
-                "out_sz": (self.dataset.chunkSize, self.dataset.chunkSize),
+                "out_sz": (self.dataset.chunkSize, self.dataset.chunkSize)
+            },
+            "training_params": {
+                "NODATA": self.NODATA,
+                "task_type": self.task,
+                "normalize_inputs": self.normalize_inputs,
+                "do_class_mapping": self.do_class_mapping,
+                "class_mapping": self.dataset.class_mapping,
+                "inv_class_mapping": self.dataset.inv_class_mapping
             },
             "optimizer": self.optimizer.state_dict(),
             "model_states": self.model.state_dict(),
