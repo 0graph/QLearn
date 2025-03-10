@@ -37,6 +37,7 @@ from qgis.core import (Qgis,
                        QgsProcessingParameterMultipleLayers,
                        QgsProcessingParameterFileDestination,
                        QgsProcessingParameterRasterLayer,
+                       QgsProcessingParameterEnum,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterNumber)
 
@@ -74,6 +75,9 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     ARGS_NODATA = 'ARGS_NODATA'
     ARGS_EPOCHS = 'ARGS_EPOCH'
     INPUT_MODEL = 'INPUT_MODEL'
+    ARGS_TRAINTYPE = 'TRAINING_TYPE'
+
+    training_types = ["classification","regression"]
 
     def initAlgorithm(self, config):
         """
@@ -114,6 +118,15 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         )
 
         self.addParameter(
+            QgsProcessingParameterEnum(
+                self.ARGS_TRAINTYPE,
+                self.tr("Model training type"),
+                options=self.training_types,
+                allowMultiple=False
+            )
+        )
+
+        self.addParameter(
             QgsProcessingParameterFile(
                 self.INPUT_MODEL,
                 self.tr('Model to continue training on'),
@@ -143,6 +156,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         model_save_loc = self.parameterAsFileOutput(parameters, self.OUTPUT_MODEL, context)
         n_epochs = self.parameterAsInt(parameters,self.ARGS_EPOCHS, context)
         nodata = self.parameterAsInt(parameters,self.ARGS_NODATA, context)
+        training_type = self.parameterAsEnum(parameters,self.ARGS_TRAINTYPE, context)
 
         args = {
             "CHUNK_SIZE": 256,
@@ -150,10 +164,10 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             "IGNORE_INDEX" : -100,
             "BANDS": 8,
             "BATCH_SIZE": 16,
-            "LEARNING_RATE": 1e-3,
+            "LEARNING_RATE": 1e-4,
             "EPOCHS": n_epochs,
             "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-            "TRAIN_TYPE": "classification", # classification or regression
+            "TRAIN_TYPE": self.training_types[training_type], # classification or regression
             "GENERATE_AUGMENTED": False,
             "NORMALIZE": False,
             "CLASS_REMAPPING": True,

@@ -129,7 +129,7 @@ class QUNetTrainer:
 
             # Calculate loss
             outputs = self.model(images)
-            loss = self.criterion(outputs, targets)
+            loss = self.criterion_loss(outputs, targets, images)
 
             # Backpropagate loss
             self.optimizer.zero_grad()
@@ -152,6 +152,24 @@ class QUNetTrainer:
 
         return metrics
     
+    def criterion_loss(self, outputs: torch.tensor, targets: torch.tensor, inputs: torch.tensor) -> float:
+        #TODO: calculate a mask for NODATA values and remove them from outputs and targets before calculating loss
+
+        #self.feedback.pushInfo(f"Outputs shape: {outputs.size()} Targets shape: {targets.size()}")
+
+        mask = (targets != self.NODATA)
+
+        if self.task == "classification":
+            mask_o = mask.unsqueeze(1).expand_as(outputs)  # fix shape [batch, n_classes, height, width]
+            outputs = outputs[mask_o].view(-1, self.n_classes) # reshape into 2D tensor for CrossEntropyLoss
+            targets = targets[mask]
+
+        else: # regression
+            outputs = outputs[mask] # remove nodata from outputs
+            targets = targets[mask] # remove nodata from targets
+
+        return self.criterion(outputs, targets)
+    
     # Execute a single epoch of validation
     def val_epoch(self):
         self.model.eval()
@@ -172,7 +190,7 @@ class QUNetTrainer:
                 
                 # calculate loss
                 outputs = self.model(images)
-                loss = self.criterion(outputs, targets)
+                loss = self.criterion_loss(outputs, targets, images)
 
                 # calculate metrics
                 total_loss += loss.item()
@@ -230,12 +248,14 @@ class QUNetTrainer:
     def prepare_targets(self, targets: torch.Tensor) -> torch.Tensor:
         if self.task == "classification":
             targets = targets.long() # For CrossEntropyLoss
+            # If 1 batch -> remove batch dimension
+            if targets.ndim == 4 and targets.shape[1] == 1:
+                targets = targets.squeeze(1)
         else:
             targets = targets.float() # For MSELoss
+            if targets.ndim == 3:
+                targets = targets.unsqueeze(1)
 
-        # If 1 batch -> remove batch dimension
-        if targets.ndim == 4 and targets.shape[1] == 1:
-            targets = targets.squeeze(1)
         return targets
         
     # compute correct and valid pixels
