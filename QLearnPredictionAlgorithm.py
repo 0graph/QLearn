@@ -45,7 +45,7 @@ import traceback
 class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
     
     def flags(self):
-        return super().flags() #| Qgis.ProcessingAlgorithmFlag.NoThreading
+        return super().flags() | QgsProcessingAlgorithm.FlagNoThreading
     
     """
     This is an example algorithm that takes a vector layer and
