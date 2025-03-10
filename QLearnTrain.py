@@ -160,7 +160,7 @@ class QUNetTrainer:
         #self.feedback.pushInfo(f"Outputs shape: {outputs.size()} Targets shape: {targets.size()}")
 
         mask_targ = (targets != self.NODATA) # make mask for targets
-        mask_input = (inputs != self.NODATA) # make mask for inputs
+        mask_input = (inputs != self.NODATA).all(dim=1) # make mask for inputs
         # if there is a NODATA value in the targets or in the inputs we want to ignore loss on the outputs from the model for these pixels
         mask = mask_targ & mask_input
 
