@@ -96,7 +96,7 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
                 self.tr("Minimum Confidence level for predicted value (otherwise overwrite with NODATA)"),
                 defaultValue=0.0,
                 minValue=0.0,
-                max_value=1.0
+                maxValue=1.0
             )
         )
 
