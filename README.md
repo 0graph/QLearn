@@ -33,12 +33,14 @@ A QGIS Plugin allowing for neural network model training and prediction using th
 - `Retraining:` if retraining is done, certain values need to be updated
   - *class mappings:* for classification the class mappings may need to be expanded
   - *normalization mappings:* for regression the normalization may need to be expanded to account for a larger range
+- `Prediction:` Change the way prediction works for regression -> do not need to use torch.max or torch.argmax
 
 
 #### Testing Needed
 - `Input Data Types:` Are input raster data types being converted correctly
 - `Invalid Values:` Test raster with invalid/NaN values
 - `Regression:` is regression working properly?
+  - Is retraining working for regression
 - `NODATA:` is training rasters with NODATA valuess working properly?
 
 
@@ -48,6 +50,8 @@ A QGIS Plugin allowing for neural network model training and prediction using th
 - `Data Augementation:` allow option to generate n augmented rasters for training
 - `Class Weightings:` Ignore index is not enough if multiple classes should be ignored, allow training weights to be specified for each class for CrossEntropyLoss
 - `Confidence Level:` Confidence levels should be able to be specified in predict, and tensor probabilities below that should be set to the specified NODATA value
+- `Save Best Model:` To avoid overfitting, after a certain amount of time without improvement the best model can be saved
+- `Custom Parameters:` allow the user to specify custom input parameters like [learning rate, depth, dropout, etc.]
 
 #### Refactoring
 - Move WriteRasterData from QLearnPredict to QLearnUtils
