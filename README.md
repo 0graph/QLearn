@@ -20,6 +20,7 @@ A QGIS Plugin allowing for neural network model training and prediction using th
   - Model - A trained pytorch model
   - Raster - An n-band raster that you want output values predicted for
 - Outputs: A raster of predicted values for the input raster based on the trained model.
+: 
 
 #### Issues
 - `QLearnPreprocessing:`
@@ -33,14 +34,11 @@ A QGIS Plugin allowing for neural network model training and prediction using th
 - `Retraining:` if retraining is done, certain values need to be updated
   - *class mappings:* for classification the class mappings may need to be expanded
   - *normalization mappings:* for regression the normalization may need to be expanded to account for a larger range
-- `Prediction:` Change the way prediction works for regression -> do not need to use torch.max or torch.argmax
 
 
 #### Testing Needed
-- `Input Data Types:` Are input raster data types being converted correctly
 - `Invalid Values:` Test raster with invalid/NaN values
-- `Regression:` is regression working properly?
-  - Is retraining working for regression
+- `Regression:` Is retraining working for regression
 - `NODATA:` is training rasters with NODATA valuess working properly?
 
 

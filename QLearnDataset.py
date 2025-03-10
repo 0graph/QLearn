@@ -157,11 +157,9 @@ class QDataset(Dataset):
                 self.feedback.pushWarning("Failed to convert block to numpy array")
                 continue
 
-            NoDataVal = block.noDataValue() if block.hasNoDataValue() else None
-            if NoDataVal is not None:
-                m_block = np.where(m_block == NoDataVal, self.NODATA, m_block)  # Replace NODATA Values
-            m_block = np.nan_to_num(m_block, nan=self.NODATA)                   # Replace Invalid Values
-            m_block = ma.filled(m_block, self.NODATA)
+            m_block = np.nan_to_num(m_block, nan=self.NODATA)      # Replace Invalid Values
+            if block.hasNoDataValue():                             # Replace block's actual NODATA value with NODATA
+                m_block = ma.filled(m_block, self.NODATA)
             
             # self.feedback.pushInfo(f"Block ({b},{chX},{chY}): W:[{block.width()}] H:[{block.height()}] NODATA:[{NoDataVal}] SHP:[{m_block.shape.__str__()}]")
             # Assign block data to the correct slice of the data array
