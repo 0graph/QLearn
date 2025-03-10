@@ -15,19 +15,20 @@ class QNNPredictor:
         self.feedback.pushInfo(f"Model: {self.model}")
         self.chunkSize = checkpoint["model_params"]["out_sz"][0]
         self.NODATA = args["NODATA"]
-        self.task = args["TASK_TYPE"]
+        self.task = checkpoint["model_params"].get("TASK_TYPE", "regression")
+        self.normalize_inputs = checkpoint["model_params"].get("NORMALIZE", True) # weather to normalize inputs before predicting with model
         self.args = args
         self.context = context
 
     def setup_model(self, m_params: dict, model_state_dict: dict) -> None:
 
-        self.model: QUNet = QUNet(                                      # UNet Model Init
-            in_channels=m_params["in_channels"],                             # Number of bands in input image
-            base_channels=m_params["base_channels"],                                           #
-            depth=m_params["depth"],                                                    # Depth of UNET, higher depth = longer training but more complex pattern recognition
-            num_class=m_params["num_class"],                                   # Number of classes to generate for output
-            retain_dim=m_params["retain_dim"],                                            #
-            out_sz=m_params["out_sz"]     # Chunk Size
+        self.model: QUNet = QUNet(                           # UNet Model Init
+            in_channels=m_params["in_channels"],             # Number of bands in input image
+            base_channels=m_params["base_channels"],         #
+            depth=m_params["depth"],                         # Depth of UNET, higher depth = longer training but more complex pattern recognition
+            num_class=m_params["num_class"],                 # Number of classes to generate for output
+            retain_dim=m_params["retain_dim"],               #
+            out_sz=m_params["out_sz"]                        # Chunk Size
         ) 
 
         self.model.load_state_dict(model_state_dict)
@@ -38,12 +39,14 @@ class QNNPredictor:
         chX, chY = QUtils.calculate_chunks(in_raster, self.chunkSize)
         raster_data: np.ndarray = in_raster.as_numpy()
         raster_data = raster_data.transpose(0, 2, 1) # [y, x] -> [x, y]
-        width, height = in_raster.width(), in_raster.height()
+        width = in_raster.width()
+        height = in_raster.height()
 
         # Create output raster based on input raster and pre-fill with NODATA values
-        out_raster_data = np.ndarray(shape=(in_raster.width(),in_raster.height()),dtype=raster_data.dtype).fill(self.NODATA)
+        out_raster_data = np.ndarray(shape=(width,height),dtype=raster_data.dtype)
+        out_raster_data.fill(self.NODATA) # Fill with NODATA in case 
 
-        self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{chX},{chY}] DataType[{raster_data.dtype.__str__()}] Dimensions[{in_raster.width()},{in_raster.height()}]")
+        self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{chX},{chY}] DataType[{raster_data.dtype.__str__()}] Dimensions[{width},{height}]")
         t_iterations = chX * chY # for setting progress
     
         self.model.eval()  # Ensure model is in evaluation mode
@@ -66,26 +69,27 @@ class QNNPredictor:
     # predicts a chunk and writes predictions to output
     def predict_chunk(self, raster_data: np.ndarray, out_raster_data: np.ndarray, iX: int, iY: int, width: int, height: int):
         chunk = self.read_chunk(raster_data, iX, iY)
-        # TODO: Normalize prediction input data if normalization was done in training
+       
         input_tensor = torch.tensor(chunk.astype(np.float32), dtype=torch.float32).unsqueeze(0)
+        if self.normalize_inputs:
+            pass  # TODO: Normalize prediction input data if normalization was done in training
 
         with torch.no_grad():
-            output = self.model(input_tensor)
-            prediction = np.ndarray()
+            output = self.model(input_tensor) # make predictions using model
 
             # Get predictions
             if self.task == "classification":
 
                 probabilities = torch.softmax(output, dim=1)
                 max_probs, prediction = torch.max(probabilities, dim=1)
-                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Class Counts [{prediction.unique(return_counts=True)}] - Mean Conf [{max_probs.mean().numel()}]")
+                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Class Counts [{prediction.unique(return_counts=True)}] - Mean Conf [{max_probs.flatten().mean().numel()}]")
                 # Write prediction to output data including probabilities
                 self.write_model_output(prediction,out_raster_data,iX,iY,width,height,max_probs)
 
             else: # regression
 
                 prediction = output # model output values are used directly
-                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Mean Value [{prediction.mean().numel()}]")
+                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Mean Value [{prediction.mean()}]")
                 # Write prediction to output data
                 self.write_model_output(prediction,out_raster_data,iX,iY,width,height)
     
@@ -95,11 +99,16 @@ class QNNPredictor:
         if probabilities is not None:
             pass #TODO: rewrite predictions that do not meet confidence level with NODATA value using probabilities
 
+        # TODO: if regression and model targets were normalized, give the option to denormalize the outputs before writing them
+        # TODO: mask out NODATA values from input and rewrite output with NODATA values
+
+        prediction = prediction.squeeze().numpy() # convert to correct format
+
         # Calculate indices to place data in
-        x_start, x_end = self.chunkSize * iX, self.chunkSize * (iX + 1)
-        y_start, y_end = self.chunkSize * iY, self.chunkSize * (iY + 1)
-        x_end = min(x_end, width)
-        y_end = min(y_end, height)
+        x_start = self.chunkSize * iX
+        y_start = self.chunkSize * iY
+        x_end = min(x_start + self.chunkSize, width)
+        y_end = min(y_start + self.chunkSize, height)
         
         # Save predictions to out_raster
         out_data[x_start:x_end, y_start:y_end] = prediction[:x_end - x_start, :y_end - y_start]
