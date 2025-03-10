@@ -37,6 +37,7 @@ from qgis.core import (Qgis,
                        QgsProcessingParameterMultipleLayers,
                        QgsProcessingParameterFileDestination,
                        QgsProcessingParameterRasterLayer,
+                       QgsProcessingParameterBoolean,
                        QgsProcessingParameterEnum,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterNumber)
@@ -73,6 +74,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     INPUT_TRAIN = 'INPUT_TRAINING_RASTER'
     INPUT_TARGET = 'INPUT_TARGET_RASTER'
     ARGS_NODATA = 'ARGS_NODATA'
+    ARGS_NORMALIZE = 'ARGS_NORMALIZE'
     ARGS_EPOCHS = 'ARGS_EPOCH'
     INPUT_MODEL = 'INPUT_MODEL'
     ARGS_TRAINTYPE = 'TRAINING_TYPE'
@@ -118,6 +120,14 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         )
 
         self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.ARGS_NORMALIZE,
+                self.tr("Normalize input values"),
+                defaultValue=True
+            )
+        )
+
+        self.addParameter(
             QgsProcessingParameterEnum(
                 self.ARGS_TRAINTYPE,
                 self.tr("Model training type"),
@@ -157,6 +167,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         n_epochs = self.parameterAsInt(parameters,self.ARGS_EPOCHS, context)
         nodata = self.parameterAsInt(parameters,self.ARGS_NODATA, context)
         training_type = self.parameterAsEnum(parameters,self.ARGS_TRAINTYPE, context)
+        normalize_inputs = self.parameterAsBoolean(parameters,self.ARGS_NORMALIZE, context)
 
         args = {
             "CHUNK_SIZE": 256,
@@ -169,7 +180,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
             "TRAIN_TYPE": self.training_types[training_type], # classification or regression
             "GENERATE_AUGMENTED": False,
-            "NORMALIZE": False,
+            "NORMALIZE_INPUTS": normalize_inputs,
             "CLASS_REMAPPING": True,
             "VALIDATION_SPLIT": 0.2
         }

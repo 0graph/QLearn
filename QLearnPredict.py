@@ -8,17 +8,22 @@ class QNNPredictor:
     def __init__(self, modelPath: str, context: QgsProcessingContext, feedback: QgsProcessingFeedback, args: dict = dict()):
         torch.serialization.add_safe_globals([QUNet, QUBlock, QUEncoder, QUDecoder])
         checkpoint = torch.load(modelPath, weights_only=False)
-        
-        self.setup_model(checkpoint["model_params"], checkpoint["model_states"])
-
         self.feedback = feedback
-        self.feedback.pushInfo(f"Model: {self.model}")
-        self.chunkSize = checkpoint["model_params"]["out_sz"][0]
-        self.NODATA = args["NODATA"]
-        self.task = checkpoint["model_params"].get("TASK_TYPE", "regression")
-        self.normalize_inputs = checkpoint["model_params"].get("NORMALIZE", True) # weather to normalize inputs before predicting with model
         self.args = args
         self.context = context
+        self.min_confidence = args["CONFIDENCE"]
+        self.chunkSize = checkpoint["model_params"]["out_sz"][0]
+        self.training_params = checkpoint["training_params"]
+        self.NODATA = self.training_params["NODATA"]
+        self.task = self.training_params["task_type"]
+        self.normalize_inputs = self.training_params["normalize_inputs"]
+        self.do_class_mapping = self.training_params["do_class_mapping"]
+        self.class_mapping = self.training_params["class_mapping"]
+        self.inv_class_mapping = self.training_params["inv_class_mapping"]
+
+        self.setup_model(checkpoint["model_params"], checkpoint["model_states"])
+        self.feedback.pushInfo(f"Model: {self.model}")
+        self.feedback.pushInfo(f"Initialized Predictor - NODATA[{self.NODATA}] TASK[{self.task}] NORMALIZE_INPUTS[{self.normalize_inputs}] DO_CLASS_MAPPING[{self.do_class_mapping}] CHUNKSIZE[{self.chunkSize}]")
 
     def setup_model(self, m_params: dict, model_state_dict: dict) -> None:
 
@@ -72,7 +77,7 @@ class QNNPredictor:
        
         input_tensor = torch.tensor(chunk.astype(np.float32), dtype=torch.float32).unsqueeze(0)
         if self.normalize_inputs:
-            pass  # TODO: Normalize prediction input data if normalization was done in training
+            input_tensor = QUtils.normalize(input_tensor, self.NODATA)
 
         with torch.no_grad():
             output = self.model(input_tensor) # make predictions using model
@@ -84,23 +89,27 @@ class QNNPredictor:
                 max_probs, prediction = torch.max(probabilities, dim=1)
                 self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Class Counts [{prediction.unique(return_counts=True)}] - Mean Conf [{max_probs.flatten().mean().numel()}]")
                 # Write prediction to output data including probabilities
-                self.write_model_output(prediction,out_raster_data,iX,iY,width,height,max_probs)
+                self.write_model_output(prediction,input_tensor,out_raster_data,iX,iY,width,height,max_probs)
 
             else: # regression
 
                 prediction = output # model output values are used directly
                 self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Mean Value [{prediction.mean()}]")
                 # Write prediction to output data
-                self.write_model_output(prediction,out_raster_data,iX,iY,width,height)
+                self.write_model_output(prediction,input_tensor,out_raster_data,iX,iY,width,height)
     
 
     # writes the prediction output to the correct slice of the output data
-    def write_model_output(self, prediction: np.ndarray, out_data: np.ndarray, iX: int, iY: int, width: int, height: int, probabilities = None):
-        if probabilities is not None:
-            pass #TODO: rewrite predictions that do not meet confidence level with NODATA value using probabilities
+    def write_model_output(self, prediction: torch.tensor, input_tensor: torch.tensor ,out_data: np.ndarray, iX: int, iY: int, width: int, height: int, probabilities: torch.tensor = None):
+        
+        # overwrite predictions below the minimum confidence level with NODATA values (only for classification)
+        if probabilities is not None and self.min_confidence > 0.0:
+            confidence_mask = probabilities < self.min_confidence
+            prediction[confidence_mask] = self.NODATA
 
-        # TODO: if regression and model targets were normalized, give the option to denormalize the outputs before writing them
-        # TODO: mask out NODATA values from input and rewrite output with NODATA values
+        # make mask out of NODATA values in the input tensor and rewrite the predictions with NODATA based on the mask
+        nodata_mask = input_tensor == self.NODATA
+        prediction[nodata_mask] = self.NODATA
 
         prediction = prediction.squeeze().numpy() # convert to correct format
 
