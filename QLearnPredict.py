@@ -88,7 +88,7 @@ class QNNPredictor:
 
                 probabilities = torch.softmax(output, dim=1)
                 max_probs, prediction = torch.max(probabilities, dim=1)
-                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Class Counts [{prediction.unique(return_counts=True)}] - Mean Conf [{max_probs.flatten().mean().numel()}]")
+                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Class Counts [{prediction.unique(return_counts=True)}] - Mean Conf [{max_probs.flatten().mean()}]")
                 # Write prediction to output data including probabilities
                 self.write_model_output(prediction,input_tensor,out_raster_data,iX,iY,width,height,max_probs)
 
