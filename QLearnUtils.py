@@ -1,4 +1,4 @@
-from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingContext, Qgis, QgsRasterFileWriter
+from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingUtils, QgsProcessingContext, Qgis, QgsRasterFileWriter
 from qgis.analysis import QgsAlignRaster
 from qgis import processing
 from torch import optim, tensor
@@ -51,15 +51,15 @@ class QUtils:
     @staticmethod
     def alignRasters(
             training_raster: QgsRasterLayer, 
-            target_raster: QgsRasterLayer, feedback: QgsProcessingFeedback) -> tuple[bool,QgsRasterLayer,QgsRasterLayer]:
+            target_raster: QgsRasterLayer, index: int, feedback: QgsProcessingFeedback, context: QgsProcessingContext) -> tuple[bool,str,str]:
         
-        mem_training = "memory:training_raster"
-        mem_target = "memory:target_raster"
+        training_aligned_filename = QgsProcessingUtils.generateTempFilename(f"training_aligned_{index}.tif")
+        target_aligned_filename = QgsProcessingUtils.generateTempFilename(f"target_aligned_{index}.tif")
 
         alignRaster = QgsAlignRaster()
         rasters_to_align = [ # Creates in memory rasters for alignment
-            QgsAlignRaster.Item(target_raster.source(),mem_target),
-            QgsAlignRaster.Item(training_raster.source(),mem_training)
+            QgsAlignRaster.Item(target_raster.source(),target_aligned_filename),
+            QgsAlignRaster.Item(training_raster.source(),training_aligned_filename)
             ]
 
         alignRaster.setRasters(rasters_to_align)
@@ -69,23 +69,27 @@ class QUtils:
 
         success = alignRaster.checkInputParameters()
         if(not success):
-            feedback.pushInfo(alignRaster.errorMessage())
+            feedback.pushInfo(f"AlignRaster - InputParameterError: {alignRaster.errorMessage()}")
             return False, None, None
         
         # Run Alignment
         success = alignRaster.run()
         if(not success):
-            feedback.pushInfo(alignRaster.errorMessage())
+            feedback.pushInfo(f"AlignRaster - Failed to complete algorithm: {alignRaster.errorMessage()}")
             return False, None, None
         
-        aligned_training = QgsRasterLayer(mem_training, "Aligned Training Raster")
-        aligned_target = QgsRasterLayer(mem_target, "Aligned Target Raster")
+        aligned_training = QgsRasterLayer(training_aligned_filename, "Aligned Training Raster")
+        aligned_target = QgsRasterLayer(target_aligned_filename, "Aligned Target Raster")
 
         if not aligned_training.isValid() or not aligned_target.isValid():
             feedback.reportError("Error: Failed to load aligned rasters.")
             return False, None, None
+
+        # Save to file so rasters dont exceeed memory capacity
+        #QUtils.setRasterDestination(aligned_training, training_aligned_filename,feedback,context)
+        #QUtils.setRasterDestination(aligned_target,target_aligned_filename,feedback,context)
         
-        return True, aligned_training, aligned_target
+        return True, training_aligned_filename, target_aligned_filename
     
     # calculate number of chunks in raster
     @staticmethod

@@ -3,8 +3,10 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 import numpy.ma as ma
-from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsProcessingUtils, QgsRasterDataProvider, QgsRectangle, QgsRasterBlock, Qgis
+from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsRasterDataProvider, QgsRectangle, QgsRasterBlock, Qgis
 from .QLearnUtils import QUtils
+
+from .QRasterNumpy import *
 
 
 # Class format used by pytorch dataloader
@@ -30,8 +32,9 @@ class QDataset(Dataset):
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
         self.do_class_mapping = args["CLASS_REMAPPING"]             # Weather to preform automatic class remapping
-        self.class_mapping = {0 : self.NODATA}                      # the class mapping dictionary { new_class : old_class }
-        self.inv_class_mapping = {self.NODATA : 0}                  # Used for rempapping tensors { old_class : new_class }
+        self.class_mapping = {}                                     # the class mapping dictionary { new_class : old_class }
+        self.inv_class_mapping = {}                                 # Used for rempapping tensors { old_class : new_class }
+        self.NODATA_class_mapping = -100                            # used to set CrossEntropyLoss ignore index
 
 
         if(len(training_rasters) != len(target_rasters)):
@@ -42,19 +45,13 @@ class QDataset(Dataset):
         for i,(train_ras, targ_ras) in enumerate(zip(training_rasters, target_rasters)):
             self.feedback.pushInfo(f"Raster Set {i}: [Training: {train_ras.name()},Target: {targ_ras.name()}] Bands: {train_ras.bandCount()}")
 
-            success, train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, self.feedback)
+            success, train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, i, self.feedback, self.context)
 
-            if(not success or targ_ras_align.bandCount() > 1):
+            if(not success or targ_ras.bandCount() > 1):
                 self.feedback.pushWarning(f"Error: Could not align rasters {train_ras.name(),targ_ras.name()}")
             else:
                 self.bands = min(self.bands, train_ras.bandCount()) # Set band count to lowest of any raster in list
-                
-                # Save to file so rasters dont exceeed memory capacity
-                training_aligned_filename = QgsProcessingUtils.generateTempFilename(f"training_aligned_{i}.tif")
-                target_aligned_filename = QgsProcessingUtils.generateTempFilename(f"target_aligned_{i}.tif")
-                QUtils.setRasterDestination(train_ras_align, training_aligned_filename,self.feedback,self.context)
-                QUtils.setRasterDestination(targ_ras_align,target_aligned_filename,self.feedback,self.context)
-                self.aligned_rasters.append((training_aligned_filename, target_aligned_filename))
+                self.aligned_rasters.append((train_ras_align, targ_ras_align))
 
         # Calculate total number of chunks across all rasters to be used by PyTorch DataLoader
         for i, (train_ras_f, targ_ras_f) in enumerate(self.aligned_rasters):
@@ -66,6 +63,28 @@ class QDataset(Dataset):
             # Add Class mappings from aligned rasters
             if self.task == "classification" and self.do_class_mapping:
                 self.update_class_mapping(targ_ras.as_numpy())
+
+        # now that we've update the class mapping, insert nodata class mapping at the end so that if the classes start at 0 then it wont have to shift them for the output
+        self.add_NODATA_class_mapping()
+        
+
+    def add_NODATA_class_mapping(self):
+        # only want to add class mapping if classification and we're doing class mapping
+        if self.task != "classification" or not self.do_class_mapping:
+            return
+
+
+        if self.NODATA not in self.class_mapping.values():
+            # add NODATA as the last class 
+            self.NODATA_class_mapping = max(self.class_mapping.keys()) + 1
+            self.class_mapping[self.NODATA_class_mapping] = self.NODATA
+
+        # update inverse mapping to add NODATA at the end
+        self.inv_class_mapping = {cls: i for i, cls in self.class_mapping.items()}
+
+        # Debugging statements
+        self.feedback.pushInfo(f"Finalized Class Mapping: {self.class_mapping}")  
+        self.feedback.pushInfo(f"Finalized Inverse Class Mapping: {self.inv_class_mapping}")
 
     def __len__(self):
         return len(self.chunk_indices)
@@ -81,10 +100,14 @@ class QDataset(Dataset):
         training_tensor = torch.tensor(training_chunk, dtype=torch.float32)
         target_tensor = torch.tensor(target_chunk, dtype=torch.float32)
 
+        # Normalize training data
         if self.normalize_inputs:
             training_tensor = QUtils.normalize(training_tensor, self.NODATA)
 
-        # Return normalized training data and remapped target data
+        if self.task == "regression":
+            target_tensor = QUtils.normalize(target_tensor, self.NODATA)
+
+        # Return training data and remapped target data
         return training_tensor, self.remap_classes(target_tensor)
     
     # preform class remapping based on dictionary (target raster)
@@ -106,13 +129,17 @@ class QDataset(Dataset):
     def update_class_mapping(self, arr : np.array):
         unique_classes = np.unique(arr)
 
-        self.class_mapping = {i: cls for i, cls in enumerate(unique_classes)}
-        self.inv_class_mapping = {cls: i for i, cls in enumerate(unique_classes)}
+        # Update the class mapping with new classes
+        for ucls in unique_classes:
+            if ucls not in self.class_mapping.values():
+                new_index = len(self.class_mapping)
+                self.class_mapping[new_index] = ucls
+                self.inv_class_mapping[ucls] = new_index
 
         self.feedback.pushInfo(f"Updated Class Mapping: {self.class_mapping}")  # Debugging statement
 
     def read_chunk(self, ras_filename: str, chX: int, chY: int) -> np.ndarray:
-        raster = QgsRasterLayer(ras_filename)
+        raster = QgsRasterLayer(ras_filename) # Fails on multithread
         raster_band_count = min(self.bands,raster.bandCount())
 
         
@@ -154,15 +181,19 @@ class QDataset(Dataset):
 
             # NumPy create a masked numpy array from the block
             # Note: if the block does not have a NODATA value it will use a default value for making which can cause conflicts
-            m_block = block.as_numpy(use_masking = True)
-            if m_block is None:
-                self.feedback.pushWarning("Failed to convert block to numpy array")
-                continue
+            # Replace block's actual NODATA value with NODATA
+            m_block = block.as_numpy(use_masking=False)  
 
-            m_block = np.nan_to_num(m_block, nan=self.NODATA)      # Replace Invalid Values
-            if block.hasNoDataValue():                             # Replace block's actual NODATA value with NODATA
-                m_block = ma.filled(m_block, self.NODATA)
-            
+            # Replace NaN values with NODATA
+            if np.isnan(m_block).any():
+                m_block = np.nan_to_num(m_block, nan=self.NODATA)
+
+            # Apply masking if NODATA value exists
+            if block.hasNoDataValue():
+                no_data_value = block.noDataValue()
+                mask = (m_block == no_data_value)
+                m_block[mask] = self.NODATA # replace block's NODATA with our NODATA
+
             # self.feedback.pushInfo(f"Block ({b},{chX},{chY}): W:[{block.width()}] H:[{block.height()}] NODATA:[{NoDataVal}] SHP:[{m_block.shape.__str__()}]")
             # Assign block data to the correct slice of the data array
             data[b - 1, :ySize, :xSize] = m_block

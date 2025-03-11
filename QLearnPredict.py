@@ -124,8 +124,9 @@ class QNNPredictor:
 
     def write_raster_data(self, in_raster: QgsRasterLayer, out_raster_path: str, data: np.ndarray) -> bool:
         
+
         out_raster = QUtils.createSinglebandRaster(
-            destination="memory:predicted_raster",
+            destination=out_raster_path,
             feedback=self.feedback,
             crs=in_raster.crs(),
             extent=in_raster.extent(),
@@ -163,9 +164,6 @@ class QNNPredictor:
             return False
         
         provider.setEditable(False)
-
-        # Save the raster
-        QUtils.setRasterDestination(out_raster,out_raster_path,self.feedback,self.context) 
 
         return True
         

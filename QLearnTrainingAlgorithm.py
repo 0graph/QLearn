@@ -51,7 +51,7 @@ import traceback
 class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     
     def flags(self):
-        return super().flags() | Qgis.ProcessingAlgorithmFlag.NoThreading
+        return super().flags() | QgsProcessingAlgorithm.FlagNoThreading
     
     """
     This is an example algorithm that takes a vector layer and
@@ -172,7 +172,6 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         args = {
             "CHUNK_SIZE": 256,
             "NODATA": nodata,
-            "IGNORE_INDEX" : -100,
             "BANDS": 8,
             "BATCH_SIZE": 16,
             "LEARNING_RATE": 1e-4,
