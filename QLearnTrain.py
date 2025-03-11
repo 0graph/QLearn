@@ -155,21 +155,17 @@ class QUNetTrainer:
         return metrics
     
     def criterion_loss(self, outputs: torch.tensor, targets: torch.tensor, inputs: torch.tensor) -> float:
-        #TODO: calculate a mask for NODATA values and remove them from outputs and targets before calculating loss
-
         
-        mask = (targets != self.NODATA) # make mask for targets
-        mask_input = (inputs != self.NODATA).all(dim=1) # make mask for inputs
-        # if there is a NODATA value in the targets or in the inputs we want to ignore loss on the outputs from the model for these pixels
-        mask = mask_targ & mask_input
-
-        self.feedback.pushInfo(f"Before mask Outputs shape: {outputs.size()} Targets shape: {targets.size()} mask shape: {mask.size()}")
-
         if self.task != "classification": # only for regression -> CrossEntropyLoss for classification does it's own masking through ignore_index
+            mask = (targets != self.NODATA) # make mask for targets
+            mask_input = (inputs != self.NODATA).all(dim=1) # make mask for inputs
+            # if there is a NODATA value in the targets or in the inputs we want to ignore loss on the outputs from the model for these pixels
+            mask = mask_targ & mask_input
+
+            self.feedback.pushInfo(f"Before mask Outputs shape: {outputs.size()} Targets shape: {targets.size()} mask shape: {mask.size()}")
             outputs = outputs[mask] # remove nodata from outputs
             targets = targets[mask] # remove nodata from targets
-            
-        self.feedback.pushInfo(f"After mask Outputs shape: {outputs.size()}, Targets shape: {targets.size()}")
+            self.feedback.pushInfo(f"After mask Outputs shape: {outputs.size()}, Targets shape: {targets.size()}")
 
         return self.criterion(outputs, targets)
     

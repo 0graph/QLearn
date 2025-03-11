@@ -34,7 +34,7 @@ class QDataset(Dataset):
         self.do_class_mapping = args["CLASS_REMAPPING"]             # Weather to preform automatic class remapping
         self.class_mapping = {}                                     # the class mapping dictionary { new_class : old_class }
         self.inv_class_mapping = {}                                 # Used for rempapping tensors { old_class : new_class }
-        self.NODATA_class_mapping                                   # used to set CrossEntropyLoss ignore index
+        self.NODATA_class_mapping = -100                            # used to set CrossEntropyLoss ignore index
 
 
         if(len(training_rasters) != len(target_rasters)):
@@ -68,7 +68,7 @@ class QDataset(Dataset):
         self.add_NODATA_class_mapping()
         
 
-    def add_NODATA_class_mapping(self)
+    def add_NODATA_class_mapping(self):
         if self.NODATA not in self.class_mapping.values():
             # add NODATA as the last class 
             self.NODATA_class_mapping = max(self.class_mapping.keys()) + 1

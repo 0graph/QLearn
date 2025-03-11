@@ -172,7 +172,6 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         args = {
             "CHUNK_SIZE": 256,
             "NODATA": nodata,
-            "IGNORE_INDEX" : -100,
             "BANDS": 8,
             "BATCH_SIZE": 16,
             "LEARNING_RATE": 1e-3,
