@@ -32,6 +32,9 @@ A QGIS Plugin allowing for neural network model training and prediction using th
     - for training classification the class mappings may need to be expanded
       - this should be able to be done after QDataset is initialized 
     - for prediction classes may should be unmapped back to thier original values
+- `Type Conversions:` check if there is any issues with classes when converting or comparing floats and fix using a tolerance
+- `Prediction Output Display:` fix prediction outputs defaulting to min and max of 0 for displaying values
+- `Classification NODATA outputs:` seems like partial chunks have a very high possibility of bad predictions due to nodata remapping
 
 
 #### Testing Needed
