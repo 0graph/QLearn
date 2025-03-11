@@ -174,7 +174,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             "NODATA": nodata,
             "BANDS": 8,
             "BATCH_SIZE": 16,
-            "LEARNING_RATE": 1e-3,
+            "LEARNING_RATE": 1e-4,
             "EPOCHS": n_epochs,
             "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
             "TRAIN_TYPE": self.training_types[training_type], # classification or regression

@@ -69,6 +69,11 @@ class QDataset(Dataset):
         
 
     def add_NODATA_class_mapping(self):
+        # only want to add class mapping if classification and we're doing class mapping
+        if self.task != "classification" or not self.do_class_mapping:
+            return
+
+
         if self.NODATA not in self.class_mapping.values():
             # add NODATA as the last class 
             self.NODATA_class_mapping = max(self.class_mapping.keys()) + 1
@@ -98,6 +103,9 @@ class QDataset(Dataset):
         # Normalize training data
         if self.normalize_inputs:
             training_tensor = QUtils.normalize(training_tensor, self.NODATA)
+
+        #if self.task == "regression":
+        #    target_tensor = QUtils.normalize(target_tensor, self.NODATA)
 
         # Return training data and remapped target data
         return training_tensor, self.remap_classes(target_tensor)

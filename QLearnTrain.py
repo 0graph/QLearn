@@ -19,7 +19,6 @@ class QUNetTrainer:
         # Set Training Arguments
         self.dataset = dataset                                          # Dataset used for DataLoader
         self.device = args["DEVICE"]                                    # CPU or GPU
-        self.n_classes = len(self.dataset.class_mapping)                # Number of output classes, this should be determined automatically from the target dataset
         self.task = args["TRAIN_TYPE"]                                  # regression or classification
         self.epochs = args["EPOCHS"]                                    # Number of epochs to train for
         self.learning_rate = args["LEARNING_RATE"]                      # Learning Rate
@@ -30,6 +29,10 @@ class QUNetTrainer:
         self.do_class_mapping = args["CLASS_REMAPPING"]                 # Weather to preform automatic class remapping
         self.model_output_location = output_loc                         # Where to save model file
         self.feedback = feedback                                        # For processing algorithm
+
+        # number of classes is set to 1 if regression
+        # number of classes is automatically determined from input dataset if classification
+        self.n_classes = len(self.dataset.class_mapping) if self.task == "classification" else 1
                                                                         
         # Setup PyTorch Training Objects
         self.setup_model()
@@ -155,17 +158,13 @@ class QUNetTrainer:
         return metrics
     
     def criterion_loss(self, outputs: torch.tensor, targets: torch.tensor, inputs: torch.tensor) -> float:
-        
-        if self.task != "classification": # only for regression -> CrossEntropyLoss for classification does it's own masking through ignore_index
-            mask = (targets != self.NODATA) # make mask for targets
-            mask_input = (inputs != self.NODATA).all(dim=1) # make mask for inputs
-            # if there is a NODATA value in the targets or in the inputs we want to ignore loss on the outputs from the model for these pixels
-            mask = mask_targ & mask_input
+        # TODO: For regression -> mask NODATA values
 
-            self.feedback.pushInfo(f"Before mask Outputs shape: {outputs.size()} Targets shape: {targets.size()} mask shape: {mask.size()}")
+        # mask NODATA values for regression -> MSELoss does not have ignore_index so it's very important to remove NODATA
+        if self.task == "regression":
+            mask = (targets != self.NODATA)
             outputs = outputs[mask] # remove nodata from outputs
             targets = targets[mask] # remove nodata from targets
-            self.feedback.pushInfo(f"After mask Outputs shape: {outputs.size()}, Targets shape: {targets.size()}")
 
         return self.criterion(outputs, targets)
     
