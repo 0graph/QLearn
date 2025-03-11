@@ -75,9 +75,10 @@ class QNNPredictor:
     def predict_chunk(self, raster_data: np.ndarray, out_raster_data: np.ndarray, iX: int, iY: int, width: int, height: int):
         chunk = self.read_chunk(raster_data, iX, iY)
        
-        input_tensor = torch.tensor(chunk.astype(np.float32), dtype=torch.float32).unsqueeze(0)
+        input_tensor = torch.tensor(chunk.astype(np.float32), dtype=torch.float32)
         if self.normalize_inputs:
             input_tensor = QUtils.normalize(input_tensor, self.NODATA)
+        input_tensor = input_tensor.unsqueeze(0)
 
         with torch.no_grad():
             output = self.model(input_tensor) # make predictions using model
@@ -108,7 +109,7 @@ class QNNPredictor:
             prediction[confidence_mask] = self.NODATA
 
         # make mask out of NODATA values in the input tensor and rewrite the predictions with NODATA based on the mask
-        nodata_mask = input_tensor == self.NODATA
+        nodata_mask = (input_tensor == self.NODATA).all(dim=1).unsqueeze(0)
         prediction[nodata_mask] = self.NODATA
 
         prediction = prediction.squeeze().numpy() # convert to correct format

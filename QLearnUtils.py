@@ -134,7 +134,7 @@ class QUtils:
                     tensor[i][nodataMask] = (tensor[i][nodataMask] - min_val) / (max_val - min_val)
                     
         else:
-            raise ValueError("Input tensor must have 2 or 3 dimensions")
+            raise ValueError(f"Input tensor must have 2 or 3 dimensions - actual shape: {tensor.size()}")
 
         return tensor
 
