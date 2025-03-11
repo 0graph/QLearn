@@ -104,8 +104,11 @@ class QDataset(Dataset):
         if self.normalize_inputs:
             training_tensor = QUtils.normalize(training_tensor, self.NODATA)
 
-        if self.task == "regression":
+        if self.task == "regression": # need to normalize regression targets for now to prevent exploding gradients
             target_tensor = QUtils.normalize(target_tensor, self.NODATA)
+        else: # convert to long tensor before class remapping
+            target_tensor = torch.round(target_tensor).long()
+        
 
         # Return training data and remapped target data
         return training_tensor, self.remap_classes(target_tensor)
@@ -190,8 +193,7 @@ class QDataset(Dataset):
 
             # Apply masking if NODATA value exists
             if block.hasNoDataValue():
-                no_data_value = block.noDataValue()
-                mask = (m_block == no_data_value)
+                mask = (m_block == block.noDataValue())
                 m_block[mask] = self.NODATA # replace block's NODATA with our NODATA
 
             # self.feedback.pushInfo(f"Block ({b},{chX},{chY}): W:[{block.width()}] H:[{block.height()}] NODATA:[{NoDataVal}] SHP:[{m_block.shape.__str__()}]")
