@@ -109,7 +109,15 @@ class QNNPredictor:
             prediction[confidence_mask] = self.NODATA
 
         # make mask out of NODATA values in the input tensor and rewrite the predictions with NODATA based on the mask
-        nodata_mask = (input_tensor == self.NODATA).all(dim=1).unsqueeze(0)
+        nodata_mask = (input_tensor == self.NODATA).all(dim=1)
+
+        # for regression expects size [1,1,chunkSize,chunkSize] for classification expects size [1, chunkSize, chunkSize]
+        if self.task == "regression":
+            nodata_mask = nodata_mask.unsqueeze(0)
+        else:
+            nodata_mask = nodata_mask.squeeze(dim=1)
+
+        self.feedback.pushInfo(f"mask shape: {nodata_mask.size()}, prediction shape:{prediction.size()}")
         prediction[nodata_mask] = self.NODATA
 
         prediction = prediction.squeeze().numpy() # convert to correct format
