@@ -70,7 +70,7 @@ class QUNetTrainer:
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau( 
             self.optimizer, mode='min', factor=0.1, patience=4,min_lr=1e-6)
         # CrossEntropyLosss if Classification, MSELoss otherwise
-        self.criterion = (nn.CrossEntropyLoss(ignore_index=self.NODATA) 
+        self.criterion = (nn.CrossEntropyLoss(ignore_index=self.dataset.NODATA_class_mapping) 
                 if self.task == "classification" else nn.MSELoss())
 
     # setup the UNet model parameters
@@ -157,22 +157,19 @@ class QUNetTrainer:
     def criterion_loss(self, outputs: torch.tensor, targets: torch.tensor, inputs: torch.tensor) -> float:
         #TODO: calculate a mask for NODATA values and remove them from outputs and targets before calculating loss
 
-        #self.feedback.pushInfo(f"Outputs shape: {outputs.size()} Targets shape: {targets.size()}")
-
-        mask_targ = (targets != self.NODATA) # make mask for targets
+        
+        mask = (targets != self.NODATA) # make mask for targets
         mask_input = (inputs != self.NODATA).all(dim=1) # make mask for inputs
         # if there is a NODATA value in the targets or in the inputs we want to ignore loss on the outputs from the model for these pixels
         mask = mask_targ & mask_input
 
+        self.feedback.pushInfo(f"Before mask Outputs shape: {outputs.size()} Targets shape: {targets.size()} mask shape: {mask.size()}")
 
-        if self.task == "classification":
-            mask_o = mask.unsqueeze(1).expand_as(outputs)  # fix shape [batch, n_classes, height, width]
-            outputs = outputs[mask_o].view(-1, self.n_classes) # reshape into 2D tensor for CrossEntropyLoss
-            targets = targets[mask]
-
-        else: # regression
+        if self.task != "classification": # only for regression -> CrossEntropyLoss for classification does it's own masking through ignore_index
             outputs = outputs[mask] # remove nodata from outputs
             targets = targets[mask] # remove nodata from targets
+            
+        self.feedback.pushInfo(f"After mask Outputs shape: {outputs.size()}, Targets shape: {targets.size()}")
 
         return self.criterion(outputs, targets)
     
