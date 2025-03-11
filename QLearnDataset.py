@@ -104,8 +104,8 @@ class QDataset(Dataset):
         if self.normalize_inputs:
             training_tensor = QUtils.normalize(training_tensor, self.NODATA)
 
-        #if self.task == "regression":
-        #    target_tensor = QUtils.normalize(target_tensor, self.NODATA)
+        if self.task == "regression":
+            target_tensor = QUtils.normalize(target_tensor, self.NODATA)
 
         # Return training data and remapped target data
         return training_tensor, self.remap_classes(target_tensor)
