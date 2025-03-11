@@ -4,11 +4,11 @@
 
 [general]
 name=QLearn
-qgisMinimumVersion=3.0
+qgisMinimumVersion=3.26.2
 description=QLearn preforms automatic training of a neural network model on raster data
-version=0.1
-author=Adam Bialecki
-email=adam@ardanika.com
+version=0.5
+author=Adam B
+email=adam{at}ardanika{dot}com
 
 about=QLearn is a plugin that allows you to train a UNet segmentation neural network architecture to segment and classify raster data. It can also use pretrained models to make predictions on raster data
 
@@ -25,11 +25,11 @@ hasProcessingProvider=yes
 # Tags are comma separated with spaces allowed
 tags=analysis,processing,raster,neural network,classification,segmentation,training
 
-homepage=http://homepage
+homepage=https://github.com/0graph/QLearn/wiki
 category=Analysis
 icon=icon.png
 # experimental flag
-experimental=True
+experimental=False
 
 # deprecated flag (applies to the whole plugin, not just a single version)
 deprecated=False

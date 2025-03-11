@@ -19,7 +19,6 @@ class QUNetTrainer:
         # Set Training Arguments
         self.dataset = dataset                                          # Dataset used for DataLoader
         self.device = args["DEVICE"]                                    # CPU or GPU
-        self.n_classes = len(self.dataset.class_mapping)                # Number of output classes, this should be determined automatically from the target dataset
         self.task = args["TRAIN_TYPE"]                                  # regression or classification
         self.epochs = args["EPOCHS"]                                    # Number of epochs to train for
         self.learning_rate = args["LEARNING_RATE"]                      # Learning Rate
@@ -30,6 +29,10 @@ class QUNetTrainer:
         self.do_class_mapping = args["CLASS_REMAPPING"]                 # Weather to preform automatic class remapping
         self.model_output_location = output_loc                         # Where to save model file
         self.feedback = feedback                                        # For processing algorithm
+
+        # number of classes is set to 1 if regression
+        # number of classes is automatically determined from input dataset if classification
+        self.n_classes = len(self.dataset.class_mapping) if self.task == "classification" else 1
                                                                         
         # Setup PyTorch Training Objects
         self.setup_model()
@@ -70,7 +73,7 @@ class QUNetTrainer:
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau( 
             self.optimizer, mode='min', factor=0.1, patience=4,min_lr=1e-6)
         # CrossEntropyLosss if Classification, MSELoss otherwise
-        self.criterion = (nn.CrossEntropyLoss(ignore_index=self.NODATA) 
+        self.criterion = (nn.CrossEntropyLoss(ignore_index=self.dataset.NODATA_class_mapping) 
                 if self.task == "classification" else nn.MSELoss())
 
     # setup the UNet model parameters
@@ -155,22 +158,11 @@ class QUNetTrainer:
         return metrics
     
     def criterion_loss(self, outputs: torch.tensor, targets: torch.tensor, inputs: torch.tensor) -> float:
-        #TODO: calculate a mask for NODATA values and remove them from outputs and targets before calculating loss
+        # TODO: For regression -> mask NODATA values
 
-        #self.feedback.pushInfo(f"Outputs shape: {outputs.size()} Targets shape: {targets.size()}")
-
-        mask_targ = (targets != self.NODATA) # make mask for targets
-        mask_input = (inputs != self.NODATA) # make mask for inputs
-        # if there is a NODATA value in the targets or in the inputs we want to ignore loss on the outputs from the model for these pixels
-        mask = mask_targ & mask_input
-
-
-        if self.task == "classification":
-            mask_o = mask.unsqueeze(1).expand_as(outputs)  # fix shape [batch, n_classes, height, width]
-            outputs = outputs[mask_o].view(-1, self.n_classes) # reshape into 2D tensor for CrossEntropyLoss
-            targets = targets[mask]
-
-        else: # regression
+        # mask NODATA values for regression -> MSELoss does not have ignore_index so it's very important to remove NODATA
+        if self.task == "regression":
+            mask = (targets != self.NODATA)
             outputs = outputs[mask] # remove nodata from outputs
             targets = targets[mask] # remove nodata from targets
 
