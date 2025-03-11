@@ -26,7 +26,7 @@ class QDataset(Dataset):
         self.aligned_rasters = []                                   # The list of aligned raster filenames
         self.chunkSize = args["CHUNK_SIZE"]                         # Split Images into Chunks of this size
         self.NODATA = args["NODATA"]                                # NoData Value for rasters
-        self.bands = args["BANDS"]                                  # Calculated from each training raster, will use the lowest value. 
+        self.bands = 999                                            # Calculated from each training raster, will use the lowest value. initalized to 999 so any amount of bands can be accepted
         self.task = args["TRAIN_TYPE"]                              # regression or classification
         self.normalize_inputs = args["NORMALIZE_INPUTS"]            # weather to normalize the input values in _getitem_
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
@@ -117,7 +117,7 @@ class QDataset(Dataset):
         
         np_tensor = tensor.numpy()
         # Create output array with the same shape
-        remapped_array = np.full(np_tensor.shape, fill_value=self.NODATA, dtype=np.int64)  # NODATA
+        remapped_array = np.full(np_tensor.shape, fill_value=self.NODATA_class_mapping, dtype=np.int64)  # NODATA
 
         # Apply mapping using inverse mapping
         for old_class, new_class in self.inv_class_mapping.items():
@@ -131,7 +131,7 @@ class QDataset(Dataset):
 
         # Update the class mapping with new classes
         for ucls in unique_classes:
-            if ucls not in self.class_mapping.values():
+            if ucls not in self.class_mapping.values() and ucls != self.NODATA:
                 new_index = len(self.class_mapping)
                 self.class_mapping[new_index] = ucls
                 self.inv_class_mapping[ucls] = new_index

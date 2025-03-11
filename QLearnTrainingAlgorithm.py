@@ -76,6 +76,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     ARGS_NODATA = 'ARGS_NODATA'
     ARGS_NORMALIZE = 'ARGS_NORMALIZE'
     ARGS_EPOCHS = 'ARGS_EPOCH'
+    ARGS_LR = 'ARGS_LEARNINGRATE'
     INPUT_MODEL = 'INPUT_MODEL'
     ARGS_TRAINTYPE = 'TRAINING_TYPE'
 
@@ -116,6 +117,15 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
                 self.ARGS_NODATA,
                 self.tr("NODATA Value"),
                 defaultValue=-100
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.ARGS_LR,
+                self.tr("Learning Rate"),
+                type=QgsProcessingParameterNumber.Double,
+                defaultValue=0.001
             )
         )
 
@@ -168,13 +178,13 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         nodata = self.parameterAsInt(parameters,self.ARGS_NODATA, context)
         training_type = self.parameterAsEnum(parameters,self.ARGS_TRAINTYPE, context)
         normalize_inputs = self.parameterAsBoolean(parameters,self.ARGS_NORMALIZE, context)
+        learning_rate = self.parameterAsDouble(parameters, self.ARGS_LR, context)
 
         args = {
             "CHUNK_SIZE": 256,
             "NODATA": nodata,
-            "BANDS": 8,
             "BATCH_SIZE": 16,
-            "LEARNING_RATE": 1e-4,
+            "LEARNING_RATE": learning_rate,
             "EPOCHS": n_epochs,
             "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
             "TRAIN_TYPE": self.training_types[training_type], # classification or regression

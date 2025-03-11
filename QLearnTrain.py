@@ -29,6 +29,7 @@ class QUNetTrainer:
         self.do_class_mapping = args["CLASS_REMAPPING"]                 # Weather to preform automatic class remapping
         self.model_output_location = output_loc                         # Where to save model file
         self.feedback = feedback                                        # For processing algorithm
+        self.NODATA_class_mapping = self.dataset.NODATA_class_mapping   
 
         # number of classes is set to 1 if regression
         # number of classes is automatically determined from input dataset if classification
@@ -73,8 +74,9 @@ class QUNetTrainer:
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau( 
             self.optimizer, mode='min', factor=0.1, patience=4,min_lr=1e-6)
         # CrossEntropyLosss if Classification, MSELoss otherwise
-        self.criterion = (nn.CrossEntropyLoss(ignore_index=self.dataset.NODATA_class_mapping) 
+        self.criterion = (nn.CrossEntropyLoss(ignore_index=self.NODATA_class_mapping) 
                 if self.task == "classification" else nn.MSELoss())
+        self.feedback.pushInfo(f"ignore Index: {self.NODATA_class_mapping}")
 
     # setup the UNet model parameters
     def setup_model(self) -> None:
@@ -258,7 +260,7 @@ class QUNetTrainer:
         
     # compute correct and valid pixels
     def calculate_pred_accuracy(self, outputs: torch.Tensor, targets: torch.Tensor) -> tuple[int, int]:
-        mask = targets != self.NODATA  # Mask NODATA values
+        mask = targets != self.NODATA_class_mapping  # Mask NODATA values
         valid_pixels = mask.sum().item()
         
         # Early exit
@@ -281,6 +283,7 @@ class QUNetTrainer:
             },
             "training_params": {
                 "NODATA": self.NODATA,
+                "NODATA_CLASS_MAPPING": self.NODATA_class_mapping,
                 "task_type": self.task,
                 "normalize_inputs": self.normalize_inputs,
                 "do_class_mapping": self.do_class_mapping,
