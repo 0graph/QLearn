@@ -17,6 +17,9 @@ class QNNPredictor:
         self.NODATA = self.training_params["NODATA"]
         self.task = self.training_params["task_type"]
         self.normalize_inputs = self.training_params["normalize_inputs"]
+        self.normalize_targets = self.training_params["normalize_targets"]
+        self.norm_params_train = self.training_params["normalization_params_train"]
+        self.norm_params_target = self.training_params["normalization_params_target"]
         self.do_class_mapping = self.training_params["do_class_mapping"]
         self.class_mapping = self.training_params["class_mapping"]
         self.inv_class_mapping = self.training_params["inv_class_mapping"]
@@ -77,7 +80,7 @@ class QNNPredictor:
        
         input_tensor = torch.tensor(chunk.astype(np.float32), dtype=torch.float32)
         if self.normalize_inputs:
-            input_tensor = QUtils.normalize(input_tensor, self.NODATA)
+            input_tensor = QUtils.normalize(input_tensor, self.NODATA, self.norm_params_train, self.feedback)
         input_tensor = input_tensor.unsqueeze(0)
 
         with torch.no_grad():
@@ -96,6 +99,11 @@ class QNNPredictor:
 
                 prediction = output # model output values are used directly
                 self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Mean Value [{prediction.mean()}]")
+
+                # denormalize if needed
+                if self.normalize_targets:
+                    prediction = QUtils.denormalize(prediction, self.NODATA, self.norm_params_target, self.feedback)
+
                 # Write prediction to output data
                 self.write_model_output(prediction,input_tensor,out_raster_data,iX,iY,width,height)
     

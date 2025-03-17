@@ -146,6 +146,36 @@ class QUtils:
     @staticmethod
     def sigmoid_normalization(tensor: torch.Tensor, mean: float, scale: float) -> torch.Tensor:
         return 1 / (1 + torch.exp(-(tensor - mean) / scale))
+    
+    # inverse of the sigmoid normalization
+    @staticmethod
+    def sigmoid_denormalization(tensor: torch.Tensor, mean: float, scale: float) -> torch.Tensor:
+        return mean - scale * torch.log(1 / tensor - 1)
+    
+
+    # Denormalizes data values (output only)
+    @staticmethod
+    def denormalize(tensor: torch.Tensor, NODATA: float, params: list[NormalizationParams], feedback) -> torch.Tensor:
+        mask = tensor == NODATA
+
+        if tensor.ndim == 2:
+            assert len(params) == 1, "Normalization params must be provided for each band"
+            tensor = QUtils.sigmoid_denormalization(tensor, params[0].get_mean(), params[0].get_std())
+        elif tensor.ndim == 3:
+            assert len(params) == tensor.shape[0], "Normalization params must be provided for each band"
+            for i in range(tensor.shape[0]):
+                tensor[i] = QUtils.sigmoid_denormalization(tensor[i], params[i].get_mean(), params[i].get_std())
+        else:
+            raise ValueError(f"Input tensor must have 2 or 3 dimensions - actual shape: {tensor.size()}")
+        
+        # replace NODATA values after normalization
+        tensor[mask] = NODATA
+
+        if feedback is not None:
+            feedback.pushInfo(f"Denormalized Tensor: mean[{tensor.mean()}], std[{tensor.std()}] min[{tensor.min()}], max[{tensor.max()}]")
+
+        return tensor
+
 
     # Normalizes data values (input only)
     # Using a sigmoid function to deal with potentially larger values discovered in later training phases
