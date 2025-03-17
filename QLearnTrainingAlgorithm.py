@@ -149,7 +149,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFile(
                 self.INPUT_MODEL,
-                self.tr('Model to continue training on'),
+                self.tr('Model to continue training on (will overwrite settings provided)'),
                 fileFilter='PyTorch Model(*.pth)',
                 optional=True
             )
@@ -206,7 +206,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
 
         # Setup Dataset
         dataset = QDataset(training_rasters, target_rasters, context, feedback, args, checkpoint)
-        trainer = QUNetTrainer(dataset,model_save_loc, feedback, args, current_model, checkpoint)
+        trainer = QUNetTrainer(dataset,model_save_loc, feedback, args, checkpoint)
         try:
             trainer.train()
         except Exception as e:

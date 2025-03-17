@@ -31,8 +31,8 @@ class QDataset(Dataset):
         self.task = args["TRAIN_TYPE"]                              # regression or classification
         self.normalize_inputs = args["NORMALIZE_INPUTS"]            # weather to normalize the input values in _getitem_
         self.normalize_targets = args["NORMALIZE_TARGETS"]          # weather to normalize the target values in _getitem_
-        self.norm_params_train: list[NormalizationParams]           # mean and scale values for normalization of training data
-        self.norm_params_target: list[NormalizationParams]          # mean and scale values for normalization of target data
+        self.norm_params_train: list[NormalizationParams] = None    # mean and scale values for normalization of training data
+        self.norm_params_target: list[NormalizationParams] = None   # mean and scale values for normalization of target data
         self.checkpoint = checkpoint                                # checkpoint dictionary
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
@@ -44,6 +44,7 @@ class QDataset(Dataset):
 
         self.normalize_targets = self.normalize_targets and self.task == "regression" # only normalize targets for regression
 
+        # will overwrite the passed in params
         self.load_checkpoint_data() # load checkpoint data if it exists
 
         if(len(training_rasters) != len(target_rasters)):
@@ -116,8 +117,8 @@ class QDataset(Dataset):
             return
         
         # initialize normalization parameters (if checkpoint is not none then they should be initialized)
-        if(self.checkpoint is not None):
-            self.norm_params_train = [NormalizationParams() for _ in range(min(data.shape[0], self.bands))]
+        if(self.checkpoint is None):
+            self.norm_params_train = [NormalizationParams() for _ in range(self.bands)]
             self.norm_params_target = [NormalizationParams()] # only one target band
         else:
             assert self.norm_params_train is not None and self.norm_params_target is not None, "Normalization parameters must be initialized if loading from checkpoint"
@@ -134,8 +135,6 @@ class QDataset(Dataset):
 
             # Calculate normalization parameters for target data
             data = targ_ras.as_numpy(use_masking=True)
-
-            assert data.shape.length == 2, "Target raster must be single band"
 
             self.norm_params_target[0].update_from_array(data)
 

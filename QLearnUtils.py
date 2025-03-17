@@ -1,12 +1,9 @@
 from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingUtils, QgsProcessingContext, Qgis, QgsRasterFileWriter
 from qgis.analysis import QgsAlignRaster
 from qgis import processing
-from torch import optim, tensor
 import torch
 import numpy as np
-from typing import dataclass
 
-@dataclass
 # Source: https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
 # Using Welford's online algorithm for calculating mean and standard deviation
 class NormalizationParams:
@@ -168,7 +165,7 @@ class QUtils:
         else:
             raise ValueError(f"Input tensor must have 2 or 3 dimensions - actual shape: {tensor.size()}")
         
-        # replace NODATA values after normalization
+        # replace NODATA values after denormalization
         tensor[mask] = NODATA
 
         if feedback is not None:

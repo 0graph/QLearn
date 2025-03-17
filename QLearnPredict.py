@@ -102,7 +102,11 @@ class QNNPredictor:
 
                 # denormalize if needed
                 if self.normalize_targets:
-                    prediction = QUtils.denormalize(prediction, self.NODATA, self.norm_params_target, self.feedback)
+                    prediction_denorm = QUtils.denormalize(
+                        prediction.squeeze(), # denormalize expects 2D tensor
+                        self.NODATA, self.norm_params_target, 
+                        self.feedback)
+                    prediction[0,0] = prediction_denorm # replace normalized values with denormalized values
 
                 # Write prediction to output data
                 self.write_model_output(prediction,input_tensor,out_raster_data,iX,iY,width,height)
