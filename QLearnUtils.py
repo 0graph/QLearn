@@ -142,6 +142,7 @@ class QUtils:
 
     # Source: https://abagen.readthedocs.io/en/stable/user_guide/normalization.html
     # Soruce: https://github.com/rmarkello/abagen/blob/main/abagen/correct.py
+    # Robust sigmoid normalization
     @staticmethod
     def sigmoid_normalization(tensor: torch.Tensor, mean: float, scale: float) -> torch.Tensor:
         return 1 / (1 + torch.exp(-(tensor - mean) / scale))
@@ -150,9 +151,7 @@ class QUtils:
     # Using a sigmoid function to deal with potentially larger values discovered in later training phases
     # NormalizationParams must be precalculated from the entire dataset and provided for each band to ensure accurate normalization
     @staticmethod
-    def normalize(tensor: torch.Tensor, NODATA: float, params: list[NormalizationParams] = None) -> torch.Tensor:
-
-        assert params is not None, "Normalization params must be provided and initialized"
+    def normalize(tensor: torch.Tensor, NODATA: float, params: list[NormalizationParams], feedback = None) -> torch.Tensor:
 
         if tensor.ndim == 2:  # Single-band raster
 
@@ -185,6 +184,10 @@ class QUtils:
                     
         else:
             raise ValueError(f"Input tensor must have 2 or 3 dimensions - actual shape: {tensor.size()}")
+        
+        # test if normalization is working
+        if feedback is not None:
+            feedback.pushInfo(f"Normalized Tensor: mean[{tensor.mean()}], std[{tensor.std()}] min[{tensor.min()}], max[{tensor.max()}]")
 
         return tensor
 

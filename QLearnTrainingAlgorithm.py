@@ -197,9 +197,16 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
 
         feedback.pushInfo(f"Args: {args}")
 
+        # load checkpoint if retraining
+        checkpoint = None
+        if current_model:
+            checkpoint = torch.load(current_model)
+            feedback.pushInfo(f"Loaded checkpoint from {current_model}")
+
+
         # Setup Dataset
-        dataset = QDataset(training_rasters, target_rasters,context,feedback,args)
-        trainer = QUNetTrainer(dataset,model_save_loc,feedback,args, current_model)
+        dataset = QDataset(training_rasters, target_rasters, context, feedback, args, checkpoint)
+        trainer = QUNetTrainer(dataset,model_save_loc, feedback, args, current_model, checkpoint)
         try:
             trainer.train()
         except Exception as e:

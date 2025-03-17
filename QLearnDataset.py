@@ -16,7 +16,8 @@ class QDataset(Dataset):
                  target_rasters: list[QgsRasterLayer],
                  context: QgsProcessingContext,
                  feedback: QgsProcessingFeedback,
-                 args: dict = dict()):
+                 args: dict,
+                 checkpoint: dict):
         
         self.training_rasters = training_rasters
         self.target_rasters = target_rasters
@@ -32,6 +33,7 @@ class QDataset(Dataset):
         self.normalize_targets = args["NORMALIZE_TARGETS"]          # weather to normalize the target values in _getitem_
         self.norm_params_train: list[NormalizationParams]           # mean and scale values for normalization of training data
         self.norm_params_target: list[NormalizationParams]          # mean and scale values for normalization of target data
+        self.checkpoint = checkpoint                                # checkpoint dictionary
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
         self.do_class_mapping = args["CLASS_REMAPPING"]             # Weather to preform automatic class remapping
@@ -41,6 +43,8 @@ class QDataset(Dataset):
 
 
         self.normalize_targets = self.normalize_targets and self.task == "regression" # only normalize targets for regression
+
+        self.load_checkpoint_data() # load checkpoint data if it exists
 
         if(len(training_rasters) != len(target_rasters)):
             self.feedback.pushWarning("Error: Length of Input Rasters and Target Rasters does not match")
@@ -71,20 +75,52 @@ class QDataset(Dataset):
 
         
         # Calculate normalization parameters for training data
-
-
+        self.calc_normalization_params()
             
         # now that we've update the class mapping, insert nodata class mapping at the end so that if the classes start at 0 
         # then it wont have to shift them for the output
         self.add_NODATA_class_mapping()
 
-    def calc_normalization_params(self, data: np.ndarray):
+    # preloads the checkpoint data for retraining before processing the dataset
+    def load_checkpoint_data(self):
+        if not self.checkpoint: # no checkpoint data (new training)
+            return
+        
+        model_params = self.checkpoint["model_params"]
+        self.chunkSize = model_params["out_sz"][0]
+
+        training_params = self.checkpoint["training_params"]
+        self.NODATA = training_params["NODATA"]
+        self.task = training_params["task_type"]
+        self.normalize_inputs = training_params["normalize_inputs"]
+        self.do_class_mapping = training_params["do_class_mapping"] 
+        self.normalize_targets = training_params["normalize_targets"]
+        self.norm_params_train = self.checkpoint["norm_params_train"]
+        self.norm_params_target = self.checkpoint["norm_params_target"]
+        self.class_mapping = self.checkpoint["class_mapping"]
+        self.inv_class_mapping = self.checkpoint["inv_class_mapping"]
+        self.NODATA_class_mapping = self.checkpoint["NODATA_class_mapping"]
+
+        # Debugging Statements
+        self.feedback.pushInfo(f"Loaded Checkpoint Data: NODATA[{self.NODATA}] TASK[{self.task}] NORMALIZE_INPUTS[{self.normalize_inputs}] DO_CLASS_MAPPING[{self.do_class_mapping}] CHUNKSIZE[{self.chunkSize}]")
+        self.feedback.pushInfo(f"Loaded Checkpoint Data: Training Normalization Params: {self.norm_params_train}")
+        self.feedback.pushInfo(f"Loaded Checkpoint Data: Target Normalization Params: {self.norm_params_target}")
+        self.feedback.pushInfo(f"Loaded Checkpoint Data: Class Mapping: {self.class_mapping}")
+        self.feedback.pushInfo(f"Loaded Checkpoint Data: Inverse Class Mapping: {self.inv_class_mapping}")
+        self.feedback.pushInfo(f"Loaded Checkpoint Data: NODATA Class Mapping: {self.NODATA_class_mapping}")
+
+
+
+    def calc_normalization_params(self):
         if not self.normalize_inputs:
             return
         
-        # initialize normalization parameters
-        self.norm_params_train = [NormalizationParams() for _ in range(min(data.shape[0], self.bands))]
-        self.norm_params_target = [NormalizationParams()] # only one target band
+        # initialize normalization parameters (if checkpoint is not none then they should be initialized)
+        if(self.checkpoint is not None):
+            self.norm_params_train = [NormalizationParams() for _ in range(min(data.shape[0], self.bands))]
+            self.norm_params_target = [NormalizationParams()] # only one target band
+        else:
+            assert self.norm_params_train is not None and self.norm_params_target is not None, "Normalization parameters must be initialized if loading from checkpoint"
         
         for train_ras, targ_ras in self.aligned_rasters:
             train_ras = QgsRasterLayer(train_ras)
@@ -142,10 +178,10 @@ class QDataset(Dataset):
 
         # Normalize training data
         if self.normalize_inputs:
-            training_tensor = QUtils.normalize(training_tensor, self.NODATA)
+            training_tensor = QUtils.normalize(training_tensor, self.NODATA, self.norm_params_train, self.feedback)
 
         if self.task == "regression": # need to normalize regression targets for now to prevent exploding gradients
-            target_tensor = QUtils.normalize(target_tensor, self.NODATA)
+            target_tensor = QUtils.normalize(target_tensor, self.NODATA, self.norm_params_target, self.feedback)
         else: # convert to long tensor before class remapping
             target_tensor = torch.round(target_tensor).long()
         

@@ -14,7 +14,7 @@ class TrainingMetrics:
     accuracy: float = 0.0
 
 class QUNetTrainer:
-    def __init__(self, dataset: QDataset, output_loc: str, feedback: QgsProcessingFeedback, args: dict = dict(), curr_model_path: str = ""):
+    def __init__(self, dataset: QDataset, output_loc: str, feedback: QgsProcessingFeedback, args: dict, checkpoint: dict):
 
         # Set Training Arguments
         self.dataset = dataset                                          # Dataset used for DataLoader
@@ -25,11 +25,10 @@ class QUNetTrainer:
         self.NODATA = args["NODATA"]
         self.batch_size = args["BATCH_SIZE"]
         self.val_split = args["VALIDATION_SPLIT"]                       # 0-1 ratio of data used for validation vs data used for training
-        self.normalize_inputs = args["NORMALIZE_INPUTS"]                # weather input values are normalized in QDataset -> save this for prediction
-        self.do_class_mapping = args["CLASS_REMAPPING"]                 # Weather to preform automatic class remapping
         self.model_output_location = output_loc                         # Where to save model file
         self.feedback = feedback                                        # For processing algorithm
         self.NODATA_class_mapping = self.dataset.NODATA_class_mapping   
+        self.checkpoint = checkpoint
 
         # number of classes is set to 1 if regression
         # number of classes is automatically determined from input dataset if classification
@@ -40,31 +39,21 @@ class QUNetTrainer:
         self.setup_dataloaders(self.dataset)
         self.setup_OSL()
 
-        self.try_loading_model(curr_model_path)
+        self.load_checkpoint_data()
 
         self.feedback.pushInfo(f"Number of Classes: {self.n_classes} detected.")
 
 
     # try loading states of current model and optimizers to continue training
-    def try_loading_model(self, curr_model_path: str):
-        self.feedback.pushInfo(f"loading saved model from: {curr_model_path}")
-        # no model to load
-        if curr_model_path == "":
+    def load_checkpoint_data(self):
+        if self.checkpoint is None: # No checkpoint data (new training)
             return
 
-        # try loading model states
-        if os.path.isfile(curr_model_path):
-            try:
-                checkpoint = torch.load(curr_model_path)
-                self.model.load_state_dict(checkpoint["model_states"])
-                self.optimizer.load_state_dict(checkpoint["optimizer"])
-                self.scheduler.load_state_dict(checkpoint["scheduler"])
+        # Load model state
+        self.model.load_state_dict(self.checkpoint["model_states"])
+        self.optimizer.load_state_dict(self.checkpoint["optimizer"])
+        self.scheduler.load_state_dict(self.checkpoint["scheduler"])
 
-                # TODO: Update class mappings
-            except Exception as e:
-                self.feedback.pushInfo(f"Exception: {e} - failed to load model from: {curr_model_path} - data is invalid.")
-        else:
-            self.feedback.pushInfo(f"Failed to load model from: {curr_model_path}. starting from scratch.")
 
     # Setup the optimizer, scheduler, and loss function
     def setup_OSL(self) -> None:
@@ -79,10 +68,19 @@ class QUNetTrainer:
         self.feedback.pushInfo(f"ignore Index: {self.NODATA_class_mapping}")
 
     # setup the UNet model parameters
+    # will use parameters from checkpoint if avaliable
     def setup_model(self) -> None:
-        self.mbase_channels=64
-        self.mdepth=4
-        self.mretain_dim=True
+
+        # load model params from checkpoint if available
+        if self.checkpoint is not None:
+            model_params = self.checkpoint["model_params"]
+            self.mbase_channels = model_params["base_channels"]
+            self.mdepth = model_params["depth"]
+            self.mretain_dim = model_params["retain_dim"]
+        else:
+            self.mbase_channels=64
+            self.mdepth=4
+            self.mretain_dim=True
 
         self.model: QUNet = QUNet(                                      # UNet Model Init
             in_channels=self.dataset.bands,                             # Number of bands in input image
@@ -272,6 +270,7 @@ class QUNetTrainer:
         return correct, valid_pixels
 
     def save_model(self):
+        # TODO: refactor into a dataclass with methods for properly loading and saving
         checkpoint = {
             "model_params": {
                 "in_channels": self.dataset.bands,
@@ -285,8 +284,11 @@ class QUNetTrainer:
                 "NODATA": self.NODATA,
                 "NODATA_CLASS_MAPPING": self.NODATA_class_mapping,
                 "task_type": self.task,
-                "normalize_inputs": self.normalize_inputs,
-                "do_class_mapping": self.do_class_mapping,
+                "normalize_inputs": self.dataset.normalize_inputs,
+                "normalize_targets": self.dataset.normalize_targets,
+                "normalization_params_train": self.dataset.norm_params_train,
+                "normalization_params_target": self.dataset.norm_params_target,
+                "do_class_mapping": self.dataset.do_class_mapping,
                 "class_mapping": self.dataset.class_mapping,
                 "inv_class_mapping": self.dataset.inv_class_mapping
             },
