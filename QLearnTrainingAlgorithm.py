@@ -200,7 +200,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         # load checkpoint if retraining
         checkpoint = None
         if current_model:
-            checkpoint = torch.load(current_model)
+            checkpoint = torch.load(current_model, weights_only=False)
             feedback.pushInfo(f"Loaded checkpoint from {current_model}")
 
 

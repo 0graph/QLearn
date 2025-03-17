@@ -96,11 +96,11 @@ class QDataset(Dataset):
         self.normalize_inputs = training_params["normalize_inputs"]
         self.do_class_mapping = training_params["do_class_mapping"] 
         self.normalize_targets = training_params["normalize_targets"]
-        self.norm_params_train = self.checkpoint["norm_params_train"]
-        self.norm_params_target = self.checkpoint["norm_params_target"]
-        self.class_mapping = self.checkpoint["class_mapping"]
-        self.inv_class_mapping = self.checkpoint["inv_class_mapping"]
-        self.NODATA_class_mapping = self.checkpoint["NODATA_class_mapping"]
+        self.norm_params_train = training_params["normalization_params_train"]
+        self.norm_params_target = training_params["normalization_params_target"]
+        self.class_mapping = training_params["class_mapping"]
+        self.inv_class_mapping = training_params["inv_class_mapping"]
+        self.NODATA_class_mapping = training_params["NODATA_CLASS_MAPPING"]
 
         # Debugging Statements
         self.feedback.pushInfo(f"Loaded Checkpoint Data: NODATA[{self.NODATA}] TASK[{self.task}] NORMALIZE_INPUTS[{self.normalize_inputs}] DO_CLASS_MAPPING[{self.do_class_mapping}] CHUNKSIZE[{self.chunkSize}]")
