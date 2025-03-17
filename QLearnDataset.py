@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 import numpy as np
 import numpy.ma as ma
 from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsRasterDataProvider, QgsRectangle, QgsRasterBlock, Qgis
-from .QLearnUtils import QUtils
+from .QLearnUtils import QUtils, NormalizationParams
 
 from .QRasterNumpy import *
 
@@ -18,7 +18,7 @@ class QDataset(Dataset):
                  feedback: QgsProcessingFeedback,
                  args: dict = dict()):
         
-        self.training_raster = training_rasters
+        self.training_rasters = training_rasters
         self.target_rasters = target_rasters
         self.context = context
         self.feedback = feedback
@@ -29,6 +29,9 @@ class QDataset(Dataset):
         self.bands = 999                                            # Calculated from each training raster, will use the lowest value. initalized to 999 so any amount of bands can be accepted
         self.task = args["TRAIN_TYPE"]                              # regression or classification
         self.normalize_inputs = args["NORMALIZE_INPUTS"]            # weather to normalize the input values in _getitem_
+        self.normalize_targets = args["NORMALIZE_TARGETS"]          # weather to normalize the target values in _getitem_
+        self.norm_params_train: list[NormalizationParams]           # mean and scale values for normalization of training data
+        self.norm_params_target: list[NormalizationParams]          # mean and scale values for normalization of target data
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
         self.do_class_mapping = args["CLASS_REMAPPING"]             # Weather to preform automatic class remapping
@@ -37,11 +40,14 @@ class QDataset(Dataset):
         self.NODATA_class_mapping = -100                            # used to set CrossEntropyLoss ignore index
 
 
+        self.normalize_targets = self.normalize_targets and self.task == "regression" # only normalize targets for regression
+
         if(len(training_rasters) != len(target_rasters)):
             self.feedback.pushWarning("Error: Length of Input Rasters and Target Rasters does not match")
             return
         
         # Align each pair of rasters and save it to a temporary file if valid
+        # additionally calculate the total chunks and normalization values
         for i,(train_ras, targ_ras) in enumerate(zip(training_rasters, target_rasters)):
             self.feedback.pushInfo(f"Raster Set {i}: [Training: {train_ras.name()},Target: {targ_ras.name()}] Bands: {train_ras.bandCount()}")
 
@@ -49,14 +55,13 @@ class QDataset(Dataset):
 
             if(not success or targ_ras.bandCount() > 1):
                 self.feedback.pushWarning(f"Error: Could not align rasters {train_ras.name(),targ_ras.name()}")
-            else:
-                self.bands = min(self.bands, train_ras.bandCount()) # Set band count to lowest of any raster in list
-                self.aligned_rasters.append((train_ras_align, targ_ras_align))
+                continue
 
-        # Calculate total number of chunks across all rasters to be used by PyTorch DataLoader
-        for i, (train_ras_f, targ_ras_f) in enumerate(self.aligned_rasters):
-            train_ras = QgsRasterLayer(train_ras_f)
-            targ_ras = QgsRasterLayer(targ_ras_f)
+            self.bands = min(self.bands, train_ras.bandCount()) # Set band count to lowest of any raster in list
+            self.aligned_rasters.append((train_ras_align, targ_ras_align))
+
+            train_ras = QgsRasterLayer(train_ras_align)
+            targ_ras = QgsRasterLayer(targ_ras_align)
             chX, chY = QUtils.calculate_chunks(train_ras, self.chunkSize)
             self.chunk_indices.extend([(i, x, y) for x in range(chX) for y in range(chY)])
 
@@ -64,8 +69,43 @@ class QDataset(Dataset):
             if self.task == "classification" and self.do_class_mapping:
                 self.update_class_mapping(targ_ras.as_numpy())
 
-        # now that we've update the class mapping, insert nodata class mapping at the end so that if the classes start at 0 then it wont have to shift them for the output
+        
+        # Calculate normalization parameters for training data
+
+
+            
+        # now that we've update the class mapping, insert nodata class mapping at the end so that if the classes start at 0 
+        # then it wont have to shift them for the output
         self.add_NODATA_class_mapping()
+
+    def calc_normalization_params(self, data: np.ndarray):
+        if not self.normalize_inputs:
+            return
+        
+        # initialize normalization parameters
+        self.norm_params_train = [NormalizationParams() for _ in range(min(data.shape[0], self.bands))]
+        self.norm_params_target = [NormalizationParams()] # only one target band
+        
+        for train_ras, targ_ras in self.aligned_rasters:
+            train_ras = QgsRasterLayer(train_ras)
+            targ_ras = QgsRasterLayer(targ_ras)
+
+            # Calculate normalization parameters for training data
+            data = train_ras.as_numpy(use_masking=True)
+            for b in range(min(data.shape[0], self.bands)):
+                # calculate mean and scale for each band
+                self.norm_params_train[b].update_from_array(data[b])
+
+            # Calculate normalization parameters for target data
+            data = targ_ras.as_numpy(use_masking=True)
+
+            assert data.shape.length == 2, "Target raster must be single band"
+
+            self.norm_params_target[0].update_from_array(data)
+
+        self.feedback.pushInfo(f"Training Normalization Params: {self.norm_params_train}")
+        self.feedback.pushInfo(f"Target Normalization Params: {self.norm_params_target}")
+                
         
 
     def add_NODATA_class_mapping(self):

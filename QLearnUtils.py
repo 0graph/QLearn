@@ -4,8 +4,40 @@ from qgis import processing
 from torch import optim, tensor
 import torch
 import numpy as np
+from typing import dataclass
 
+@dataclass
+# Source: https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+# Using Welford's online algorithm for calculating mean and standard deviation
+class NormalizationParams:
+    def __init__(self):
+        self.n = 0          # count of values seen so far
+        self.mean = 0.0     # mean of values seen so far
+        self.M2 = 0.0       # sum of squares of differences from mean
 
+    # update based on array
+    def update_from_array(self, arr: np.ndarray):
+        for x in arr.flatten():
+            self.update(x)
+
+    # update mean and std
+    def update(self, x: float):
+        self.n += 1
+        delta = x - self.mean
+        self.mean += delta / self.n
+        delta2 = x - self.mean
+        self.M2 += delta * delta2 
+
+    def get_mean(self):
+        return self.mean
+
+    def get_std(self):
+        return (self.M2 / (self.n - 1)) ** 0.5 if self.n > 1 else 0.0
+    
+    def __str__(self):
+        return f"Mean: {self.mean}, Std: {self.get_std()}, N: {self.n}"
+
+    
 class QUtils:
     @staticmethod
     # Source: https://gis.stackexchange.com/questions/416616/feed-an-existing-raster-to-qgis-raster-destination-parameter-in-qgis-processing
@@ -107,22 +139,39 @@ class QUtils:
     def gen_augmentations(ras: QgsRasterLayer):
         pass
 
-    import torch
+
+    # Source: https://abagen.readthedocs.io/en/stable/user_guide/normalization.html
+    # Soruce: https://github.com/rmarkello/abagen/blob/main/abagen/correct.py
+    @staticmethod
+    def sigmoid_normalization(tensor: torch.Tensor, mean: float, scale: float) -> torch.Tensor:
+        return 1 / (1 + torch.exp(-(tensor - mean) / scale))
 
     # Normalizes data values (input only)
+    # Using a sigmoid function to deal with potentially larger values discovered in later training phases
+    # NormalizationParams must be precalculated from the entire dataset and provided for each band to ensure accurate normalization
     @staticmethod
-    def normalize(tensor: torch.Tensor, NODATA: float) -> torch.Tensor:
+    def normalize(tensor: torch.Tensor, NODATA: float, params: list[NormalizationParams] = None) -> torch.Tensor:
+
+        assert params is not None, "Normalization params must be provided and initialized"
+
         if tensor.ndim == 2:  # Single-band raster
+
+            assert len(params) == 1, "Normalization params must be provided for each band"
+
             # Mask out NODATA values
             nodataMask = tensor != NODATA 
             valid_values = tensor[nodataMask]
 
             # If there are any valid values -> normalize
             if valid_values.numel() > 0:  
-                min_val, max_val = valid_values.min(), valid_values.max()
-                tensor[nodataMask] = (tensor[nodataMask] - min_val) / (max_val - min_val)
+
+                # sigmoid normalization
+                tensor[nodataMask] = QUtils.sigmoid_normalization(tensor[nodataMask], params[0].get_mean(), params[0].get_std())
 
         elif tensor.ndim == 3:  # Multi-band raster
+
+            assert len(params) == tensor.shape[0], "Normalization params must be provided for each band"
+
             for i in range(tensor.shape[0]):  # Normalize each band separately
                 # Mask out NODATA values
                 nodataMask = tensor[i] != NODATA
@@ -130,8 +179,9 @@ class QUtils:
 
                 # If there are any valid values -> normalize
                 if valid_values.numel() > 0:
-                    min_val, max_val = valid_values.min(), valid_values.max()
-                    tensor[i][nodataMask] = (tensor[i][nodataMask] - min_val) / (max_val - min_val)
+                    
+                    # sigmoid normalization
+                    tensor[i][nodataMask] = QUtils.sigmoid_normalization(tensor[i][nodataMask], params[i].get_mean(), params[i].get_std())
                     
         else:
             raise ValueError(f"Input tensor must have 2 or 3 dimensions - actual shape: {tensor.size()}")

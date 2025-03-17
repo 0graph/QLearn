@@ -190,6 +190,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             "TRAIN_TYPE": self.training_types[training_type], # classification or regression
             "GENERATE_AUGMENTED": False,
             "NORMALIZE_INPUTS": normalize_inputs,
+            "NORMALIZE_TARGETS": True, # only for regression
             "CLASS_REMAPPING": True,
             "VALIDATION_SPLIT": 0.2
         }
