@@ -11,23 +11,23 @@ class QNNPredictor:
         self.feedback = feedback
         self.args = args
         self.context = context
-        self.min_confidence = args["CONFIDENCE"]
-        self.chunkSize = checkpoint["model_params"]["out_sz"][0]
-        self.training_params = checkpoint["training_params"]
-        self.NODATA = self.training_params["NODATA"]
-        self.task = self.training_params["task_type"]
-        self.normalize_inputs = self.training_params["normalize_inputs"]
-        self.normalize_targets = self.training_params["normalize_targets"]
-        self.norm_params_train = self.training_params["normalization_params_train"]
-        self.norm_params_target = self.training_params["normalization_params_target"]
-        self.do_class_mapping = self.training_params["do_class_mapping"]
-        self.class_mapping = self.training_params["class_mapping"]
-        self.inv_class_mapping = self.training_params["inv_class_mapping"]
-        self.overlap = args["OVERLAP"]
+        self.min_confidence = args["CONFIDENCE"]                                        # Minimum confidence level for predictions (otherwise overwrite with NODATA)
+        self.chunkSize = checkpoint["model_params"]["out_sz"][0]                        # Chunk Size
+        self.training_params = checkpoint["training_params"]                            # Training Parameters
+        self.NODATA = self.training_params["NODATA"]                                    # NODATA Value
+        self.task = self.training_params["task_type"]                                   # Task Type (classification or regression)
+        self.normalize_inputs = self.training_params["normalize_inputs"]                # Normalize Inputs (based on training)
+        self.normalize_targets = self.training_params["normalize_targets"]              # Normalize Targets (based on training - for regression only)
+        self.norm_params_train = self.training_params["normalization_params_train"]     # Normalization Parameters for training data
+        self.norm_params_target = self.training_params["normalization_params_target"]   # Normalization Parameters for target data
+        self.do_class_mapping = self.training_params["do_class_mapping"]                # Whether to remap the classes
+        self.class_mapping = self.training_params["class_mapping"]                      # Class Mapping (old class -> new class)
+        self.inv_class_mapping = self.training_params["inv_class_mapping"]              # Inverse Class Mapping (new class -> old class)
+        self.overlap = args["OVERLAP"]                                                  # Overlap between chunks (# pixels)
 
-        self.setup_model(checkpoint["model_params"], checkpoint["model_states"])
-        self.feedback.pushInfo(f"Model: {self.model}")
-        self.feedback.pushInfo(f"Initialized Predictor - NODATA[{self.NODATA}] TASK[{self.task}] NORMALIZE_INPUTS[{self.normalize_inputs}] DO_CLASS_MAPPING[{self.do_class_mapping}] CHUNKSIZE[{self.chunkSize}]")
+        self.setup_model(checkpoint["model_params"], checkpoint["model_states"])        # Setup Model with the same parameters used for training
+        # self.feedback.pushInfo(f"Model: {self.model}")
+        # self.feedback.pushInfo(f"Initialized Predictor - NODATA[{self.NODATA}] TASK[{self.task}] NORMALIZE_INPUTS[{self.normalize_inputs}] DO_CLASS_MAPPING[{self.do_class_mapping}] CHUNKSIZE[{self.chunkSize}]")
 
     def setup_model(self, m_params: dict, model_state_dict: dict) -> None:
 
@@ -106,7 +106,7 @@ class QNNPredictor:
                         prediction.squeeze(), # denormalize expects 2D tensor
                         self.NODATA, self.norm_params_target, 
                         self.feedback)
-                    prediction[0,0] = prediction_denorm # replace normalized values with denormalized values
+                    prediction[0,0] = prediction_denorm # replace normalized values with denormalized values prediction is [1,1,chunkSize,chunkSize]
 
                 # Write prediction to output data
                 self.write_model_output(prediction,input_tensor,out_raster_data,chunk,width,height)
@@ -233,6 +233,7 @@ class QNNPredictor:
 
 
     # reads a chunk from an image and pad the data as necesssary
+    # Note: padding mode could be an optional command line parameter
     def read_chunk(self, data: np.ndarray, chunk: tuple) -> np.ndarray:
 
         # calculate the padding required for the chunk

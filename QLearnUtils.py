@@ -14,6 +14,7 @@ class NormalizationParams:
         self.n = 0          # count of values seen so far
         self.mean = 0.0     # mean of values seen so far
         self.M2 = 0.0       # sum of squares of differences from mean
+        self.std = 0.0      # standard deviation of values seen so far
 
     # update based on array
     def update_from_array(self, arr: np.ndarray):
@@ -27,12 +28,13 @@ class NormalizationParams:
         self.mean += delta / self.n
         delta2 = x - self.mean
         self.M2 += delta * delta2 
+        self.std = (self.M2 / (self.n - 1)) ** 0.5 if self.n > 1 else 0.0
 
     def get_mean(self):
         return self.mean
 
     def get_std(self):
-        return (self.M2 / (self.n - 1)) ** 0.5 if self.n > 1 else 0.0
+        return self.std
     
     def __str__(self):
         return f"Mean: {self.mean}, Std: {self.get_std()}, N: {self.n}"
@@ -132,6 +134,9 @@ class QUtils:
         # +1 to Account for partial chunks
         chunksX = (width // chunkSize) + 1 
         chunksY = (height // chunkSize) + 1
+
+        assert chunksX > 0 and chunksY > 0, "Chunk size is too large for raster dimensions"
+
         return chunksX, chunksY
 
     # calculate chunk shapes with overlap
@@ -149,6 +154,8 @@ class QUtils:
         for i in range(-overlap, width, effective_size):
             for j in range(-overlap, height, effective_size):
                 chunks.append((i, j))
+
+        assert len(chunks) > 0, "No chunks were generated"
         
         return chunks
 

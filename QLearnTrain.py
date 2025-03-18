@@ -115,6 +115,9 @@ class QUNetTrainer:
             num_workers=0
         )
 
+        assert len(self.train_dataset) > 0, "Training dataset is empty"
+        assert len(self.val_dataset) > 0, "Validation dataset is empty"
+
     # Execute a single epoch of training
     def train_epoch(self) -> TrainingMetrics:
         self.model.train()
