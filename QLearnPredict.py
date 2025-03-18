@@ -23,6 +23,7 @@ class QNNPredictor:
         self.do_class_mapping = self.training_params["do_class_mapping"]
         self.class_mapping = self.training_params["class_mapping"]
         self.inv_class_mapping = self.training_params["inv_class_mapping"]
+        self.overlap = args["OVERLAP"]
 
         self.setup_model(checkpoint["model_params"], checkpoint["model_states"])
         self.feedback.pushInfo(f"Model: {self.model}")
@@ -44,7 +45,7 @@ class QNNPredictor:
     def predict(self, in_raster: QgsRasterLayer, out_ras_path: str) -> QgsRasterLayer:
 
         # Get input raster data
-        chX, chY = QUtils.calculate_chunks(in_raster, self.chunkSize)
+        chunks = QUtils.calculate_overlap_chunks(in_raster, self.chunkSize, self.overlap)
         raster_data: np.ndarray = in_raster.as_numpy()
         raster_data = raster_data.transpose(0, 2, 1) # [y, x] -> [x, y]
         width = in_raster.width()
@@ -54,20 +55,22 @@ class QNNPredictor:
         out_raster_data = np.ndarray(shape=(width,height),dtype=raster_data.dtype)
         out_raster_data.fill(self.NODATA) # Fill with NODATA in case 
 
-        self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{chX},{chY}] DataType[{raster_data.dtype.__str__()}] Dimensions[{width},{height}]")
-        t_iterations = chX * chY # for setting progress
+        self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{chunks}] DataType[{raster_data.dtype.__str__()}] Dimensions[{width},{height}]")
     
         self.model.eval()  # Ensure model is in evaluation mode
-        for iX in range(chX):
-            for iY in range(chY):
-                if self.feedback.isCanceled():
-                    return
+        for chunk_i in range(len(chunks)):
+            if self.feedback.isCanceled():
+                return
 
-                # reads a chunk from an image and uses the trained model to predict an output value
-                self.predict_chunk(raster_data,out_raster_data,iX,iY,width,height)       
-                
-                # set progress for the chunk
-                self.feedback.setProgress((((iX * chY) + iY) / t_iterations)*100)
+            # reads a chunk from an image and uses the trained model to predict an output value
+            self.predict_chunk(raster_data,out_raster_data,chunks[chunk_i],width,height)       
+            
+            # set progress for the chunk
+            self.feedback.setProgress((chunk_i/len(chunks))*100)
+
+        
+        # interpolate the edges to remove edge artefacts
+        out_raster_data = self.interpolate_edges(out_raster_data)
 
         # Write the final raster data
         self.write_raster_data(in_raster, out_ras_path, out_raster_data)
@@ -75,10 +78,10 @@ class QNNPredictor:
     
 
     # predicts a chunk and writes predictions to output
-    def predict_chunk(self, raster_data: np.ndarray, out_raster_data: np.ndarray, iX: int, iY: int, width: int, height: int):
-        chunk = self.read_chunk(raster_data, iX, iY)
+    def predict_chunk(self, raster_data: np.ndarray, out_raster_data: np.ndarray, chunk: tuple, width: int, height: int):
+        chunk_data = self.read_chunk(raster_data, chunk)
        
-        input_tensor = torch.tensor(chunk.astype(np.float32), dtype=torch.float32)
+        input_tensor = torch.tensor(chunk_data.astype(np.float32), dtype=torch.float32)
         if self.normalize_inputs:
             input_tensor = QUtils.normalize(input_tensor, self.NODATA, self.norm_params_train, self.feedback)
         input_tensor = input_tensor.unsqueeze(0)
@@ -91,14 +94,14 @@ class QNNPredictor:
 
                 probabilities = torch.softmax(output, dim=1)
                 max_probs, prediction = torch.max(probabilities, dim=1)
-                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Class Counts [{prediction.unique(return_counts=True)}] - Mean Conf [{max_probs.flatten().mean()}]")
+                self.feedback.pushInfo(f"Chunk [{chunk}] - Class Counts [{prediction.unique(return_counts=True)}] - Mean Conf [{max_probs.flatten().mean()}]")
                 # Write prediction to output data including probabilities
-                self.write_model_output(prediction,input_tensor,out_raster_data,iX,iY,width,height,max_probs)
+                self.write_model_output(prediction,input_tensor,out_raster_data,chunk,width,height,max_probs)
 
             else: # regression
 
                 prediction = output # model output values are used directly
-                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Mean Value [{prediction.mean()}]")
+                self.feedback.pushInfo(f"Chunk [{chunk}] - Mean Value [{prediction.mean()}]")
 
                 # denormalize if needed
                 if self.normalize_targets:
@@ -109,11 +112,11 @@ class QNNPredictor:
                     prediction[0,0] = prediction_denorm # replace normalized values with denormalized values
 
                 # Write prediction to output data
-                self.write_model_output(prediction,input_tensor,out_raster_data,iX,iY,width,height)
+                self.write_model_output(prediction,input_tensor,out_raster_data,chunk,width,height)
     
 
     # writes the prediction output to the correct slice of the output data
-    def write_model_output(self, prediction: torch.tensor, input_tensor: torch.tensor ,out_data: np.ndarray, iX: int, iY: int, width: int, height: int, probabilities: torch.tensor = None):
+    def write_model_output(self, prediction: torch.tensor, input_tensor: torch.tensor ,out_data: np.ndarray, chunk: tuple, width: int, height: int, probabilities: torch.tensor = None):
         
         # overwrite predictions below the minimum confidence level with NODATA values (only for classification)
         if probabilities is not None and self.min_confidence > 0.0:
@@ -135,59 +138,47 @@ class QNNPredictor:
         prediction = prediction.squeeze().numpy() # convert to correct format
 
         # Calculate indices to place data in
-        x_start = self.chunkSize * iX
-        y_start = self.chunkSize * iY
-        x_end = min(x_start + self.chunkSize, width)
-        y_end = min(y_start + self.chunkSize, height)
+        overlap_half = self.overlap // 2
+        x_start = chunk[0] + overlap_half if chunk[0] > 0 else 0
+        y_start = chunk[1] + overlap_half if chunk[1] > 0 else 0
+        x_end = min(x_start + self.chunkSize - overlap_half, width)
+        y_end = min(y_start + self.chunkSize - overlap_half, height)
 
-        # interpolate the edges to remove edge artefacts
-        #prediction = self.interpolate_edges(prediction)
+        prediction_x_start = overlap_half if chunk[0] > 0 else 0  
+        prediction_y_start = overlap_half if chunk[1] > 0 else 0  
+        prediction_slice_width = x_end - x_start
+        prediction_slice_height = y_end - y_start
+        prediction_x_end = prediction_x_start + prediction_slice_width
+        prediction_y_end = prediction_y_start + prediction_slice_height
+
+        # Ensure the slice is within bounds
+        prediction_slice = prediction[prediction_x_start:prediction_x_end, prediction_y_start:prediction_y_end]
         
         # Save predictions to out_raster
-        out_data[x_start:x_end, y_start:y_end] = prediction[:x_end - x_start, :y_end - y_start]
+        out_data[x_start:x_end, y_start:y_end] = prediction_slice
 
-    # interpolates the edges of the chunk to remove edge artefacts
-    # the edges are interpolated using a kernel of size 3x1 and a mean filter
+    # interpolates the edges of image to remove artefaacts
+    # the edges are interpolated using a kernel of size 3x3
     def interpolate_edges(self, data: np.ndarray):
-        lidx = 0 # lower index
         uidx = data.shape[0] - 1 # upper index
-        # top
-        for i in range(data[0, :].size):
-            from_idx = max(lidx, i-1)
-            to_idx = min(uidx, i+1)
-            mean = data[3, from_idx:to_idx].mean()
-            data[0, i] = mean
-            data[1, i] = mean
-            data[2, i] = mean
+        
 
-        # bottom
-        for i in range(data[-1, :].size):
-            from_idx = max(lidx, i-1)
-            to_idx = min(uidx, i+1)
-            mean = data[-4, from_idx:to_idx].mean()
-            data[-1, i] = mean
-            data[-2, i] = mean
-            data[-3, i] = mean
+        # top/bottom
+        for i in range(data.shape[1]):
+            data[-1,i] = np.mean(data[-4:-3, max(0,i-1):min(uidx,i+1)])
+            data[-2,i] = np.mean(data[-4:-3, max(0,i-1):min(uidx,i+1)])
+            data[0,i] = np.mean(data[2:3, max(0,i-1):min(uidx,i+1)])
+            data[1,i] = np.mean(data[2:3, max(0,i-1):min(uidx,i+1)])
 
-        # left
-        for i in range(data[:, 0].size):
-            from_idx = max(lidx, i-1)
-            to_idx = min(uidx, i+1)
-            mean = data[from_idx:to_idx, 3].mean()
-            data[i, 0] = mean
-            data[i, 1] = mean
-            data[i, 2] = mean
-
-        # right
-        for i in range(data[:, -1].size):  
-            from_idx = max(lidx, i-1)
-            to_idx = min(uidx, i+1)  
-            mean = data[from_idx:to_idx, -4].mean()
-            data[i, -1] = mean
-            data[i, -2] = mean
-            data[i, -3] = mean
+        # left/right
+        for i in range(data.shape[0]):
+            data[i,-1] = np.mean(data[max(0,i-1):min(uidx,i+1), -4:-3])
+            data[i,-2] = np.mean(data[max(0,i-1):min(uidx,i+1), -4:-3])
+            data[i,0] = np.mean(data[max(0,i-1):min(uidx,i+1), 2:3])
+            data[i,1] = np.mean(data[max(0,i-1):min(uidx,i+1), 2:3])
 
         return data
+        
 
     def write_raster_data(self, in_raster: QgsRasterLayer, out_raster_path: str, data: np.ndarray) -> bool:
         
@@ -235,9 +226,9 @@ class QNNPredictor:
         return True
         
 
-    def read_chunk(self, data: np.ndarray, chX: int, chY: int) -> np.ndarray:
-        sX = chX * self.chunkSize
-        sY = chY * self.chunkSize
+    def read_chunk(self, data: np.ndarray, chunk: tuple) -> np.ndarray:
+        sX = chunk[0]
+        sY = chunk[1]
         eX = sX + self.chunkSize
         eY = sY + self.chunkSize
 

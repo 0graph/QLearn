@@ -134,6 +134,24 @@ class QUtils:
         chunksY = (height // chunkSize) + 1
         return chunksX, chunksY
 
+    # calculate chunk shapes with overlap
+    # each chunk will have overlap on all sides
+    @staticmethod
+    def calculate_overlap_chunks(ras: QgsRasterLayer, chunkSize: int, overlap: int) -> list:
+        chunks = []
+        width = ras.width()
+        height = ras.height()
+        
+        # Calculate step size based on overlap
+        effective_size = chunkSize - overlap
+        
+        # calculate chunk start positions
+        for i in range(0, width, effective_size):
+            for j in range(0, height, effective_size):
+                chunks.append((i, j))
+        
+        return chunks
+
     # Generates augmented raster images to enhance training (input only)
     @staticmethod
     def gen_augmentations(ras: QgsRasterLayer):
