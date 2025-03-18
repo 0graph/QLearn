@@ -120,7 +120,8 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
 
 
         args = {
-            "CONFIDENCE": confidence
+            "CONFIDENCE": confidence,
+            "OVERLAP": 8 # number of pixels to overlap chunks
         }
 
         feedback.pushInfo(f"Args: {args}")

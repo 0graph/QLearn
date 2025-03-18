@@ -11,19 +11,23 @@ class QNNPredictor:
         self.feedback = feedback
         self.args = args
         self.context = context
-        self.min_confidence = args["CONFIDENCE"]
-        self.chunkSize = checkpoint["model_params"]["out_sz"][0]
-        self.training_params = checkpoint["training_params"]
-        self.NODATA = self.training_params["NODATA"]
-        self.task = self.training_params["task_type"]
-        self.normalize_inputs = self.training_params["normalize_inputs"]
-        self.do_class_mapping = self.training_params["do_class_mapping"]
-        self.class_mapping = self.training_params["class_mapping"]
-        self.inv_class_mapping = self.training_params["inv_class_mapping"]
+        self.min_confidence = args["CONFIDENCE"]                                        # Minimum confidence level for predictions (otherwise overwrite with NODATA)
+        self.chunkSize = checkpoint["model_params"]["out_sz"][0]                        # Chunk Size
+        self.training_params = checkpoint["training_params"]                            # Training Parameters
+        self.NODATA = self.training_params["NODATA"]                                    # NODATA Value
+        self.task = self.training_params["task_type"]                                   # Task Type (classification or regression)
+        self.normalize_inputs = self.training_params["normalize_inputs"]                # Normalize Inputs (based on training)
+        self.normalize_targets = self.training_params["normalize_targets"]              # Normalize Targets (based on training - for regression only)
+        self.norm_params_train = self.training_params["normalization_params_train"]     # Normalization Parameters for training data
+        self.norm_params_target = self.training_params["normalization_params_target"]   # Normalization Parameters for target data
+        self.do_class_mapping = self.training_params["do_class_mapping"]                # Whether to remap the classes
+        self.class_mapping = self.training_params["class_mapping"]                      # Class Mapping (old class -> new class)
+        self.inv_class_mapping = self.training_params["inv_class_mapping"]              # Inverse Class Mapping (new class -> old class)
+        self.overlap = args["OVERLAP"]                                                  # Overlap between chunks (# pixels)
 
-        self.setup_model(checkpoint["model_params"], checkpoint["model_states"])
-        self.feedback.pushInfo(f"Model: {self.model}")
-        self.feedback.pushInfo(f"Initialized Predictor - NODATA[{self.NODATA}] TASK[{self.task}] NORMALIZE_INPUTS[{self.normalize_inputs}] DO_CLASS_MAPPING[{self.do_class_mapping}] CHUNKSIZE[{self.chunkSize}]")
+        self.setup_model(checkpoint["model_params"], checkpoint["model_states"])        # Setup Model with the same parameters used for training
+        # self.feedback.pushInfo(f"Model: {self.model}")
+        # self.feedback.pushInfo(f"Initialized Predictor - NODATA[{self.NODATA}] TASK[{self.task}] NORMALIZE_INPUTS[{self.normalize_inputs}] DO_CLASS_MAPPING[{self.do_class_mapping}] CHUNKSIZE[{self.chunkSize}]")
 
     def setup_model(self, m_params: dict, model_state_dict: dict) -> None:
 
@@ -41,7 +45,7 @@ class QNNPredictor:
     def predict(self, in_raster: QgsRasterLayer, out_ras_path: str) -> QgsRasterLayer:
 
         # Get input raster data
-        chX, chY = QUtils.calculate_chunks(in_raster, self.chunkSize)
+        chunks = QUtils.calculate_overlap_chunks(in_raster, self.chunkSize, self.overlap)
         raster_data: np.ndarray = in_raster.as_numpy()
         raster_data = raster_data.transpose(0, 2, 1) # [y, x] -> [x, y]
         width = in_raster.width()
@@ -51,20 +55,19 @@ class QNNPredictor:
         out_raster_data = np.ndarray(shape=(width,height),dtype=raster_data.dtype)
         out_raster_data.fill(self.NODATA) # Fill with NODATA in case 
 
-        self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{chX},{chY}] DataType[{raster_data.dtype.__str__()}] Dimensions[{width},{height}]")
-        t_iterations = chX * chY # for setting progress
+        self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{chunks}] DataType[{raster_data.dtype.__str__()}] Dimensions[{width},{height}]")
     
         self.model.eval()  # Ensure model is in evaluation mode
-        for iX in range(chX):
-            for iY in range(chY):
-                if self.feedback.isCanceled():
-                    return
+        for chunk_i in range(len(chunks)):
+            if self.feedback.isCanceled():
+                return
 
-                # reads a chunk from an image and uses the trained model to predict an output value
-                self.predict_chunk(raster_data,out_raster_data,iX,iY,width,height)       
-                
-                # set progress for the chunk
-                self.feedback.setProgress((((iX * chY) + iY) / t_iterations)*100)
+            # reads a chunk from an image and uses the trained model to predict an output value
+            self.predict_chunk(raster_data,out_raster_data,chunks[chunk_i],width,height)       
+            
+            # set progress for the chunk
+            self.feedback.setProgress((chunk_i/len(chunks))*100)
+
 
         # Write the final raster data
         self.write_raster_data(in_raster, out_ras_path, out_raster_data)
@@ -72,12 +75,12 @@ class QNNPredictor:
     
 
     # predicts a chunk and writes predictions to output
-    def predict_chunk(self, raster_data: np.ndarray, out_raster_data: np.ndarray, iX: int, iY: int, width: int, height: int):
-        chunk = self.read_chunk(raster_data, iX, iY)
+    def predict_chunk(self, raster_data: np.ndarray, out_raster_data: np.ndarray, chunk: tuple, width: int, height: int):
+        chunk_data = self.read_chunk(raster_data, chunk)
        
-        input_tensor = torch.tensor(chunk.astype(np.float32), dtype=torch.float32)
+        input_tensor = torch.tensor(chunk_data.astype(np.float32), dtype=torch.float32)
         if self.normalize_inputs:
-            input_tensor = QUtils.normalize(input_tensor, self.NODATA)
+            input_tensor = QUtils.normalize(input_tensor, self.NODATA, self.norm_params_train, self.feedback)
         input_tensor = input_tensor.unsqueeze(0)
 
         with torch.no_grad():
@@ -88,48 +91,99 @@ class QNNPredictor:
 
                 probabilities = torch.softmax(output, dim=1)
                 max_probs, prediction = torch.max(probabilities, dim=1)
-                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Class Counts [{prediction.unique(return_counts=True)}] - Mean Conf [{max_probs.flatten().mean()}]")
+                self.feedback.pushInfo(f"Chunk [{chunk}] - Class Counts [{prediction.unique(return_counts=True)}] - Mean Conf [{max_probs.flatten().mean()}]")
                 # Write prediction to output data including probabilities
-                self.write_model_output(prediction,input_tensor,out_raster_data,iX,iY,width,height,max_probs)
+                self.write_model_output(prediction,input_tensor,out_raster_data,chunk,width,height,max_probs)
 
             else: # regression
 
                 prediction = output # model output values are used directly
-                self.feedback.pushInfo(f"Chunk [{iX},{iY}] - Mean Value [{prediction.mean()}]")
+                self.feedback.pushInfo(f"Chunk [{chunk}] - Mean Value [{prediction.mean()}]")
+
+                # denormalize if needed
+                if self.normalize_targets:
+                    prediction_denorm = QUtils.denormalize(
+                        prediction.squeeze(), # denormalize expects 2D tensor
+                        self.NODATA, self.norm_params_target, 
+                        self.feedback)
+                    prediction[0,0] = prediction_denorm # replace normalized values with denormalized values prediction is [1,1,chunkSize,chunkSize]
+
                 # Write prediction to output data
-                self.write_model_output(prediction,input_tensor,out_raster_data,iX,iY,width,height)
+                self.write_model_output(prediction,input_tensor,out_raster_data,chunk,width,height)
     
 
-    # writes the prediction output to the correct slice of the output data
-    def write_model_output(self, prediction: torch.tensor, input_tensor: torch.tensor ,out_data: np.ndarray, iX: int, iY: int, width: int, height: int, probabilities: torch.tensor = None):
-        
-        # overwrite predictions below the minimum confidence level with NODATA values (only for classification)
-        if probabilities is not None and self.min_confidence > 0.0:
-            confidence_mask = probabilities < self.min_confidence
-            prediction[confidence_mask] = self.NODATA
-
+    # reshapes the prediction (output tensor) and overwrites with NODATA values based on input tensor
+    def reshape_and_mask_output(self, prediction: torch.tensor, input_tensor: torch.tensor, probabilities: torch.tensor = None) -> torch.tensor:
         # make mask out of NODATA values in the input tensor and rewrite the predictions with NODATA based on the mask
         nodata_mask = (input_tensor == self.NODATA).all(dim=1)
 
-        # for regression expects size [1,1,chunkSize,chunkSize] for classification expects size [1, chunkSize, chunkSize]
+        # for regression expects size [1,1,chunkSize,chunkSize]
+        # for classification expects size [1, chunkSize, chunkSize]
         if self.task == "regression":
             nodata_mask = nodata_mask.unsqueeze(0)
         else:
             nodata_mask = nodata_mask.squeeze(dim=1)
 
         self.feedback.pushInfo(f"mask shape: {nodata_mask.size()}, prediction shape:{prediction.size()}")
-        prediction[nodata_mask] = self.NODATA
+        prediction[nodata_mask] = self.NODATA # overwrite predictions with NODATA values
 
-        prediction = prediction.squeeze().numpy() # convert to correct format
+        # convert to correct format (2D array)
+        prediction = prediction.squeeze().numpy()
+        return prediction
 
-        # Calculate indices to place data in
-        x_start = self.chunkSize * iX
-        y_start = self.chunkSize * iY
-        x_end = min(x_start + self.chunkSize, width)
-        y_end = min(y_start + self.chunkSize, height)
+    # writes the prediction output to the correct slice of the output data
+    def write_model_output(self, prediction: torch.tensor, input_tensor: torch.tensor ,out_data: np.ndarray, chunk: tuple, width: int, height: int, probabilities: torch.tensor = None):
         
-        # Save predictions to out_raster
-        out_data[x_start:x_end, y_start:y_end] = prediction[:x_end - x_start, :y_end - y_start]
+        # overwrite predictions below the minimum confidence level with NODATA values (only for classification)
+        if probabilities is not None and self.min_confidence > 0.0:
+            confidence_mask = probabilities < self.min_confidence
+            prediction[confidence_mask] = self.NODATA
+
+        # prepare prediction values for output
+        prediction = self.reshape_and_mask_output(prediction, input_tensor, probabilities)
+
+        overlap_half = self.overlap // 2
+        chunk_x, chunk_y = chunk # original coordinates (note: these can be negative)
+        
+        # valculate valid prediction region (non-overlapping)
+        # negative start values must be adjusted and end values must be adjusted to stay within chunk bounds
+        valid_pred_start_x = 0 if chunk_x <= 0 else overlap_half
+        valid_pred_start_y = 0 if chunk_y <= 0 else overlap_half
+        valid_pred_end_x = self.chunkSize if chunk_x + self.chunkSize >= width else self.chunkSize - overlap_half
+        valid_pred_end_y = self.chunkSize if chunk_y + self.chunkSize >= height else self.chunkSize - overlap_half
+        
+        # Calculate output region in target image
+        out_start_x = max(0, chunk_x + valid_pred_start_x)
+        out_start_y = max(0, chunk_y + valid_pred_start_y)
+        out_end_x = min(width, chunk_x + valid_pred_end_x)
+        out_end_y = min(height, chunk_y + valid_pred_end_y)
+        
+        # calculate size of output area
+        out_width = out_end_x - out_start_x
+        out_height = out_end_y - out_start_y
+        
+        # calculate start positions in prediction array
+        pred_start_x = valid_pred_start_x - min(0, chunk_x)
+        pred_start_y = valid_pred_start_y - min(0, chunk_y)
+        
+        # calculate end positions in prediction array using output area size
+        pred_end_x = pred_start_x + out_width
+        pred_end_y = pred_start_y + out_height
+        
+        # fix out of bounds values
+        if pred_end_x > prediction.shape[0] or pred_end_y > prediction.shape[1]:
+            pred_end_x = min(pred_end_x, prediction.shape[0])
+            pred_end_y = min(pred_end_y, prediction.shape[1])
+            out_end_x = out_start_x + (pred_end_x - pred_start_x)
+            out_end_y = out_start_y + (pred_end_y - pred_start_y)
+            
+        # get prediction slice
+        prediction_slice = prediction[pred_start_x:pred_end_x, pred_start_y:pred_end_y]
+        
+        # write to output
+        self.feedback.pushWarning(f"output shapes: pred={prediction_slice.shape}, out=({out_end_x-out_start_x},{out_end_y-out_start_y})")
+        out_data[out_start_x:out_end_x, out_start_y:out_end_y] = prediction_slice
+        
 
     def write_raster_data(self, in_raster: QgsRasterLayer, out_raster_path: str, data: np.ndarray) -> bool:
         
@@ -175,24 +229,38 @@ class QNNPredictor:
         provider.setEditable(False)
 
         return True
-        
 
-    def read_chunk(self, data: np.ndarray, chX: int, chY: int) -> np.ndarray:
-        sX = chX * self.chunkSize
-        sY = chY * self.chunkSize
+
+
+    # reads a chunk from an image and pad the data as necesssary
+    # Note: padding mode could be an optional command line parameter
+    def read_chunk(self, data: np.ndarray, chunk: tuple) -> np.ndarray:
+
+        # calculate the padding required for the chunk
+        sX = chunk[0]
+        sY = chunk[1]
         eX = sX + self.chunkSize
         eY = sY + self.chunkSize
 
-        # self.feedback.pushInfo(f"Reading Chunk ({chX},{chY}) from array with shape: {data.shape.__str__()}")
         
-        # Pad data if needed
-        pad_x = max(0, eX - data.shape[1])
-        pad_y = max(0, eY - data.shape[2])
+        # pad the chunk data
+        # padding is added to beginning and/or end depending on chunk position
+        pad_xmin = max(0, -sX)  
+        pad_xmax = max(0, eX - data.shape[1])
+        pad_ymin = max(0, -sY)
+        pad_ymax = max(0, eY - data.shape[2])
+
+        padded_data = np.pad(data, ((0, 0), (pad_xmin, pad_xmax), (pad_ymin, pad_ymax)), mode='edge')  
         
-        if pad_x > 0 or pad_y > 0:
-            data = np.pad(data, ((0, 0), (0, pad_x), (0, pad_y)), mode='constant')
-        
-        return data[:, sX:eX, sY:eY]
+        sX_padded = sX + pad_xmin
+        sY_padded = sY + pad_ymin
+        eX_padded = eX + pad_xmin
+        eY_padded = eY + pad_ymin
+
+        # Ensure the slice of data is within the valid bounds of the padded image
+        padded_chunk = padded_data[:, sX_padded:eX_padded, sY_padded:eY_padded]
+
+        return padded_chunk
         
        
         

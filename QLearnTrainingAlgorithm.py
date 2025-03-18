@@ -90,18 +90,16 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
 
         # Input Training Rasters
         self.addParameter(
-            QgsProcessingParameterMultipleLayers(
+            QgsProcessingParameterRasterLayer(
             self.INPUT_TRAIN,
-            self.tr("Input rasters"),
-            layerType=QgsProcessing.SourceType.TypeRaster)
+            self.tr("Input raster"))
         )
 
         # Input Target Rasters
         self.addParameter(
-            QgsProcessingParameterMultipleLayers(
+            QgsProcessingParameterRasterLayer(
             self.INPUT_TARGET,
-            self.tr("Target raster"),
-            layerType=QgsProcessing.SourceType.TypeRaster)
+            self.tr("Target raster"))
         )
 
         self.addParameter(
@@ -149,7 +147,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFile(
                 self.INPUT_MODEL,
-                self.tr('Model to continue training on'),
+                self.tr('Model to continue training on (will overwrite settings provided)'),
                 fileFilter='PyTorch Model(*.pth)',
                 optional=True
             )
@@ -170,8 +168,8 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         """
 
         # Fetch Input Parameters from Dict
-        training_rasters = self.parameterAsLayerList(parameters, self.INPUT_TRAIN, context)
-        target_rasters = self.parameterAsLayerList(parameters, self.INPUT_TARGET, context)
+        training_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TRAIN, context)
+        target_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TARGET, context)
         current_model = self.parameterAsFile(parameters,self.INPUT_MODEL, context)
         model_save_loc = self.parameterAsFileOutput(parameters, self.OUTPUT_MODEL, context)
         n_epochs = self.parameterAsInt(parameters,self.ARGS_EPOCHS, context)
@@ -190,15 +188,23 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             "TRAIN_TYPE": self.training_types[training_type], # classification or regression
             "GENERATE_AUGMENTED": False,
             "NORMALIZE_INPUTS": normalize_inputs,
+            "NORMALIZE_TARGETS": True, # only for regression
             "CLASS_REMAPPING": True,
             "VALIDATION_SPLIT": 0.2
         }
 
         feedback.pushInfo(f"Args: {args}")
 
+        # load checkpoint if retraining
+        checkpoint = None
+        if current_model:
+            checkpoint = torch.load(current_model, weights_only=False)
+            feedback.pushInfo(f"Loaded checkpoint from {current_model}")
+
+
         # Setup Dataset
-        dataset = QDataset(training_rasters, target_rasters,context,feedback,args)
-        trainer = QUNetTrainer(dataset,model_save_loc,feedback,args, current_model)
+        dataset = QDataset([training_raster], [target_raster], context, feedback, args, checkpoint)
+        trainer = QUNetTrainer(dataset,model_save_loc, feedback, args, checkpoint)
         try:
             trainer.train()
         except Exception as e:
