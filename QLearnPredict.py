@@ -68,9 +68,6 @@ class QNNPredictor:
             # set progress for the chunk
             self.feedback.setProgress((chunk_i/len(chunks))*100)
 
-        
-        # interpolate the edges to remove edge artefacts
-        out_raster_data = self.interpolate_edges(out_raster_data)
 
         # Write the final raster data
         self.write_raster_data(in_raster, out_ras_path, out_raster_data)
@@ -115,6 +112,25 @@ class QNNPredictor:
                 self.write_model_output(prediction,input_tensor,out_raster_data,chunk,width,height)
     
 
+    # reshapes the prediction (output tensor) and overwrites with NODATA values based on input tensor
+    def reshape_and_mask_output(self, prediction: torch.tensor, input_tensor: torch.tensor, probabilities: torch.tensor = None) -> torch.tensor:
+        # make mask out of NODATA values in the input tensor and rewrite the predictions with NODATA based on the mask
+        nodata_mask = (input_tensor == self.NODATA).all(dim=1)
+
+        # for regression expects size [1,1,chunkSize,chunkSize]
+        # for classification expects size [1, chunkSize, chunkSize]
+        if self.task == "regression":
+            nodata_mask = nodata_mask.unsqueeze(0)
+        else:
+            nodata_mask = nodata_mask.squeeze(dim=1)
+
+        self.feedback.pushInfo(f"mask shape: {nodata_mask.size()}, prediction shape:{prediction.size()}")
+        prediction[nodata_mask] = self.NODATA # overwrite predictions with NODATA values
+
+        # convert to correct format (2D array)
+        prediction = prediction.squeeze().numpy()
+        return prediction
+
     # writes the prediction output to the correct slice of the output data
     def write_model_output(self, prediction: torch.tensor, input_tensor: torch.tensor ,out_data: np.ndarray, chunk: tuple, width: int, height: int, probabilities: torch.tensor = None):
         
@@ -123,61 +139,50 @@ class QNNPredictor:
             confidence_mask = probabilities < self.min_confidence
             prediction[confidence_mask] = self.NODATA
 
-        # make mask out of NODATA values in the input tensor and rewrite the predictions with NODATA based on the mask
-        nodata_mask = (input_tensor == self.NODATA).all(dim=1)
+        # prepare prediction values for output
+        prediction = self.reshape_and_mask_output(prediction, input_tensor, probabilities)
 
-        # for regression expects size [1,1,chunkSize,chunkSize] for classification expects size [1, chunkSize, chunkSize]
-        if self.task == "regression":
-            nodata_mask = nodata_mask.unsqueeze(0)
-        else:
-            nodata_mask = nodata_mask.squeeze(dim=1)
-
-        self.feedback.pushInfo(f"mask shape: {nodata_mask.size()}, prediction shape:{prediction.size()}")
-        prediction[nodata_mask] = self.NODATA
-
-        prediction = prediction.squeeze().numpy() # convert to correct format
-
-        # Calculate indices to place data in
         overlap_half = self.overlap // 2
-        x_start = chunk[0] + overlap_half if chunk[0] > 0 else 0
-        y_start = chunk[1] + overlap_half if chunk[1] > 0 else 0
-        x_end = min(x_start + self.chunkSize - overlap_half, width)
-        y_end = min(y_start + self.chunkSize - overlap_half, height)
-
-        prediction_x_start = overlap_half if chunk[0] > 0 else 0  
-        prediction_y_start = overlap_half if chunk[1] > 0 else 0  
-        prediction_slice_width = x_end - x_start
-        prediction_slice_height = y_end - y_start
-        prediction_x_end = prediction_x_start + prediction_slice_width
-        prediction_y_end = prediction_y_start + prediction_slice_height
-
-        # Ensure the slice is within bounds
-        prediction_slice = prediction[prediction_x_start:prediction_x_end, prediction_y_start:prediction_y_end]
+        chunk_x, chunk_y = chunk # original coordinates (note: these can be negative)
         
-        # Save predictions to out_raster
-        out_data[x_start:x_end, y_start:y_end] = prediction_slice
-
-    # interpolates the edges of image to remove artefaacts
-    # the edges are interpolated using a kernel of size 3x3
-    def interpolate_edges(self, data: np.ndarray):
-        uidx = data.shape[0] - 1 # upper index
+        # valculate valid prediction region (non-overlapping)
+        # negative start values must be adjusted and end values must be adjusted to stay within chunk bounds
+        valid_pred_start_x = 0 if chunk_x <= 0 else overlap_half
+        valid_pred_start_y = 0 if chunk_y <= 0 else overlap_half
+        valid_pred_end_x = self.chunkSize if chunk_x + self.chunkSize >= width else self.chunkSize - overlap_half
+        valid_pred_end_y = self.chunkSize if chunk_y + self.chunkSize >= height else self.chunkSize - overlap_half
         
-
-        # top/bottom
-        for i in range(data.shape[1]):
-            data[-1,i] = np.mean(data[-4:-3, max(0,i-1):min(uidx,i+1)])
-            data[-2,i] = np.mean(data[-4:-3, max(0,i-1):min(uidx,i+1)])
-            data[0,i] = np.mean(data[2:3, max(0,i-1):min(uidx,i+1)])
-            data[1,i] = np.mean(data[2:3, max(0,i-1):min(uidx,i+1)])
-
-        # left/right
-        for i in range(data.shape[0]):
-            data[i,-1] = np.mean(data[max(0,i-1):min(uidx,i+1), -4:-3])
-            data[i,-2] = np.mean(data[max(0,i-1):min(uidx,i+1), -4:-3])
-            data[i,0] = np.mean(data[max(0,i-1):min(uidx,i+1), 2:3])
-            data[i,1] = np.mean(data[max(0,i-1):min(uidx,i+1), 2:3])
-
-        return data
+        # Calculate output region in target image
+        out_start_x = max(0, chunk_x + valid_pred_start_x)
+        out_start_y = max(0, chunk_y + valid_pred_start_y)
+        out_end_x = min(width, chunk_x + valid_pred_end_x)
+        out_end_y = min(height, chunk_y + valid_pred_end_y)
+        
+        # calculate size of output area
+        out_width = out_end_x - out_start_x
+        out_height = out_end_y - out_start_y
+        
+        # calculate start positions in prediction array
+        pred_start_x = valid_pred_start_x - min(0, chunk_x)
+        pred_start_y = valid_pred_start_y - min(0, chunk_y)
+        
+        # calculate end positions in prediction array using output area size
+        pred_end_x = pred_start_x + out_width
+        pred_end_y = pred_start_y + out_height
+        
+        # fix out of bounds values
+        if pred_end_x > prediction.shape[0] or pred_end_y > prediction.shape[1]:
+            pred_end_x = min(pred_end_x, prediction.shape[0])
+            pred_end_y = min(pred_end_y, prediction.shape[1])
+            out_end_x = out_start_x + (pred_end_x - pred_start_x)
+            out_end_y = out_start_y + (pred_end_y - pred_start_y)
+            
+        # get prediction slice
+        prediction_slice = prediction[pred_start_x:pred_end_x, pred_start_y:pred_end_y]
+        
+        # write to output
+        self.feedback.pushWarning(f"output shapes: pred={prediction_slice.shape}, out=({out_end_x-out_start_x},{out_end_y-out_start_y})")
+        out_data[out_start_x:out_end_x, out_start_y:out_end_y] = prediction_slice
         
 
     def write_raster_data(self, in_raster: QgsRasterLayer, out_raster_path: str, data: np.ndarray) -> bool:
@@ -224,24 +229,37 @@ class QNNPredictor:
         provider.setEditable(False)
 
         return True
-        
 
+
+
+    # reads a chunk from an image and pad the data as necesssary
     def read_chunk(self, data: np.ndarray, chunk: tuple) -> np.ndarray:
+
+        # calculate the padding required for the chunk
         sX = chunk[0]
         sY = chunk[1]
         eX = sX + self.chunkSize
         eY = sY + self.chunkSize
 
-        # self.feedback.pushInfo(f"Reading Chunk ({chX},{chY}) from array with shape: {data.shape.__str__()}")
         
-        # Pad data if needed
-        pad_x = max(0, eX - data.shape[1])
-        pad_y = max(0, eY - data.shape[2])
+        # pad the chunk data
+        # padding is added to beginning and/or end depending on chunk position
+        pad_xmin = max(0, -sX)  
+        pad_xmax = max(0, eX - data.shape[1])
+        pad_ymin = max(0, -sY)
+        pad_ymax = max(0, eY - data.shape[2])
+
+        padded_data = np.pad(data, ((0, 0), (pad_xmin, pad_xmax), (pad_ymin, pad_ymax)), mode='edge')  
         
-        if pad_x > 0 or pad_y > 0:
-            data = np.pad(data, ((0, 0), (0, pad_x), (0, pad_y)), mode='constant')
-        
-        return data[:, sX:eX, sY:eY]
+        sX_padded = sX + pad_xmin
+        sY_padded = sY + pad_ymin
+        eX_padded = eX + pad_xmin
+        eY_padded = eY + pad_ymin
+
+        # Ensure the slice of data is within the valid bounds of the padded image
+        padded_chunk = padded_data[:, sX_padded:eX_padded, sY_padded:eY_padded]
+
+        return padded_chunk
         
        
         

@@ -146,8 +146,8 @@ class QUtils:
         effective_size = chunkSize - overlap
         
         # calculate chunk start positions
-        for i in range(0, width, effective_size):
-            for j in range(0, height, effective_size):
+        for i in range(-overlap, width, effective_size):
+            for j in range(-overlap, height, effective_size):
                 chunks.append((i, j))
         
         return chunks
