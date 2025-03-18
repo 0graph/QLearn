@@ -83,8 +83,6 @@ class QDataset(Dataset):
         assert len(self.aligned_rasters) > 0, "Error: No Aligned Rasters Found"
         assert self.bands > 0, "Error: No Bands Found"
         assert len(self.norm_params_train) == self.bands, "Error: Normalization Parameters for Training Data not initialized properly"
-        assert len(self.class_mapping) > 0, "Error: Class Mapping not initialized properly"
-        assert len(self.inv_class_mapping) > 0, "Error: Inverse Class Mapping not initialized properly"
 
     # preloads the checkpoint data for retraining before processing the dataset
     def load_checkpoint_data(self):
