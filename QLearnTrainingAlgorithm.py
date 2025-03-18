@@ -90,18 +90,16 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
 
         # Input Training Rasters
         self.addParameter(
-            QgsProcessingParameterMultipleLayers(
+            QgsProcessingParameterRasterLayer(
             self.INPUT_TRAIN,
-            self.tr("Input rasters"),
-            layerType=QgsProcessing.SourceType.TypeRaster)
+            self.tr("Input raster"))
         )
 
         # Input Target Rasters
         self.addParameter(
-            QgsProcessingParameterMultipleLayers(
+            QgsProcessingParameterRasterLayer(
             self.INPUT_TARGET,
-            self.tr("Target raster"),
-            layerType=QgsProcessing.SourceType.TypeRaster)
+            self.tr("Target raster"))
         )
 
         self.addParameter(
@@ -170,8 +168,8 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         """
 
         # Fetch Input Parameters from Dict
-        training_rasters = self.parameterAsLayerList(parameters, self.INPUT_TRAIN, context)
-        target_rasters = self.parameterAsLayerList(parameters, self.INPUT_TARGET, context)
+        training_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TRAIN, context)
+        target_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TARGET, context)
         current_model = self.parameterAsFile(parameters,self.INPUT_MODEL, context)
         model_save_loc = self.parameterAsFileOutput(parameters, self.OUTPUT_MODEL, context)
         n_epochs = self.parameterAsInt(parameters,self.ARGS_EPOCHS, context)
@@ -205,7 +203,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
 
 
         # Setup Dataset
-        dataset = QDataset(training_rasters, target_rasters, context, feedback, args, checkpoint)
+        dataset = QDataset([training_raster], [target_raster], context, feedback, args, checkpoint)
         trainer = QUNetTrainer(dataset,model_save_loc, feedback, args, checkpoint)
         try:
             trainer.train()

@@ -139,9 +139,55 @@ class QNNPredictor:
         y_start = self.chunkSize * iY
         x_end = min(x_start + self.chunkSize, width)
         y_end = min(y_start + self.chunkSize, height)
+
+        # interpolate the edges to remove edge artefacts
+        #prediction = self.interpolate_edges(prediction)
         
         # Save predictions to out_raster
         out_data[x_start:x_end, y_start:y_end] = prediction[:x_end - x_start, :y_end - y_start]
+
+    # interpolates the edges of the chunk to remove edge artefacts
+    # the edges are interpolated using a kernel of size 3x1 and a mean filter
+    def interpolate_edges(self, data: np.ndarray):
+        lidx = 0 # lower index
+        uidx = data.shape[0] - 1 # upper index
+        # top
+        for i in range(data[0, :].size):
+            from_idx = max(lidx, i-1)
+            to_idx = min(uidx, i+1)
+            mean = data[3, from_idx:to_idx].mean()
+            data[0, i] = mean
+            data[1, i] = mean
+            data[2, i] = mean
+
+        # bottom
+        for i in range(data[-1, :].size):
+            from_idx = max(lidx, i-1)
+            to_idx = min(uidx, i+1)
+            mean = data[-4, from_idx:to_idx].mean()
+            data[-1, i] = mean
+            data[-2, i] = mean
+            data[-3, i] = mean
+
+        # left
+        for i in range(data[:, 0].size):
+            from_idx = max(lidx, i-1)
+            to_idx = min(uidx, i+1)
+            mean = data[from_idx:to_idx, 3].mean()
+            data[i, 0] = mean
+            data[i, 1] = mean
+            data[i, 2] = mean
+
+        # right
+        for i in range(data[:, -1].size):  
+            from_idx = max(lidx, i-1)
+            to_idx = min(uidx, i+1)  
+            mean = data[from_idx:to_idx, -4].mean()
+            data[i, -1] = mean
+            data[i, -2] = mean
+            data[i, -3] = mean
+
+        return data
 
     def write_raster_data(self, in_raster: QgsRasterLayer, out_raster_path: str, data: np.ndarray) -> bool:
         

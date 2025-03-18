@@ -4,6 +4,9 @@ from qgis import processing
 import torch
 import numpy as np
 
+# Potential solution for normalizing data using online normalization methods
+# Source: https://github.com/cerebras/online-normalization
+
 # Source: https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
 # Using Welford's online algorithm for calculating mean and standard deviation
 class NormalizationParams:
@@ -168,8 +171,8 @@ class QUtils:
         # replace NODATA values after denormalization
         tensor[mask] = NODATA
 
-        if feedback is not None:
-            feedback.pushInfo(f"Denormalized Tensor: mean[{tensor.mean()}], std[{tensor.std()}] min[{tensor.min()}], max[{tensor.max()}]")
+        #if feedback is not None:
+        #    feedback.pushInfo(f"Denormalized Tensor: mean[{tensor.mean()}], std[{tensor.std()}] min[{tensor.min()}], max[{tensor.max()}]")
 
         return tensor
 
@@ -213,8 +216,8 @@ class QUtils:
             raise ValueError(f"Input tensor must have 2 or 3 dimensions - actual shape: {tensor.size()}")
         
         # test if normalization is working
-        if feedback is not None:
-            feedback.pushInfo(f"Normalized Tensor: mean[{tensor.mean()}], std[{tensor.std()}] min[{tensor.min()}], max[{tensor.max()}]")
+        #if feedback is not None:
+        #    feedback.pushInfo(f"Normalized Tensor: mean[{tensor.mean()}], std[{tensor.std()}] min[{tensor.min()}], max[{tensor.max()}]")
 
         return tensor
 
