@@ -9,12 +9,12 @@ import numpy as np
 
 # Source: https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
 # Using Welford's online algorithm for calculating mean and standard deviation
+# note could calculate values from array all at once
 class NormalizationParams:
     def __init__(self):
         self.n = 0          # count of values seen so far
         self.mean = 0.0     # mean of values seen so far
         self.M2 = 0.0       # sum of squares of differences from mean
-        self.std = 0.0      # standard deviation of values seen so far
 
     # update based on array
     def update_from_array(self, arr: np.ndarray):
@@ -28,13 +28,12 @@ class NormalizationParams:
         self.mean += delta / self.n
         delta2 = x - self.mean
         self.M2 += delta * delta2 
-        self.std = (self.M2 / (self.n - 1)) ** 0.5 if self.n > 1 else 0.0
 
     def get_mean(self):
         return self.mean
 
     def get_std(self):
-        return self.std
+        return (self.M2 / (self.n - 1)) ** 0.5 if self.n > 1 else 0.0
     
     def __str__(self):
         return f"Mean: {self.mean}, Std: {self.get_std()}, N: {self.n}"
@@ -82,6 +81,7 @@ class QUtils:
         return raster_layer
     
     # Aligns a training raster and a target raster
+    # true and false are redundant
     @staticmethod
     def alignRasters(
             training_raster: QgsRasterLayer, 
@@ -104,26 +104,26 @@ class QUtils:
         success = alignRaster.checkInputParameters()
         if(not success):
             feedback.pushInfo(f"AlignRaster - InputParameterError: {alignRaster.errorMessage()}")
-            return False, None, None
+            return None, None
         
         # Run Alignment
         success = alignRaster.run()
         if(not success):
             feedback.pushInfo(f"AlignRaster - Failed to complete algorithm: {alignRaster.errorMessage()}")
-            return False, None, None
+            return None, None
         
         aligned_training = QgsRasterLayer(training_aligned_filename, "Aligned Training Raster")
         aligned_target = QgsRasterLayer(target_aligned_filename, "Aligned Target Raster")
 
         if not aligned_training.isValid() or not aligned_target.isValid():
             feedback.reportError("Error: Failed to load aligned rasters.")
-            return False, None, None
+            return None, None
 
         # Save to file so rasters dont exceeed memory capacity
         #QUtils.setRasterDestination(aligned_training, training_aligned_filename,feedback,context)
         #QUtils.setRasterDestination(aligned_target,target_aligned_filename,feedback,context)
         
-        return True, training_aligned_filename, target_aligned_filename
+        return training_aligned_filename, target_aligned_filename
     
     # calculate number of chunks in raster
     @staticmethod
@@ -245,4 +245,6 @@ class QUtils:
         #    feedback.pushInfo(f"Normalized Tensor: mean[{tensor.mean()}], std[{tensor.std()}] min[{tensor.min()}], max[{tensor.max()}]")
 
         return tensor
+    
+    
 

@@ -178,6 +178,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         normalize_inputs = self.parameterAsBoolean(parameters,self.ARGS_NORMALIZE, context)
         learning_rate = self.parameterAsDouble(parameters, self.ARGS_LR, context)
 
+        # look at argparse
         args = {
             "CHUNK_SIZE": 256,
             "NODATA": nodata,

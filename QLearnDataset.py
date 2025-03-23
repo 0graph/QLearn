@@ -1,5 +1,6 @@
 
 import torch
+import os 
 from torch.utils.data import Dataset
 import numpy as np
 import numpy.ma as ma
@@ -35,13 +36,16 @@ class QDataset(Dataset):
         self.norm_params_target: list[NormalizationParams] = None   # mean and scale values for normalization of target data
         self.checkpoint = checkpoint                                # checkpoint dictionary
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
+        
+        # Note: could save numpy arrays to file after preprocessing and class mapping to be used by dataloader
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
         self.do_class_mapping = args["CLASS_REMAPPING"]             # Weather to preform automatic class remapping
-        self.class_mapping = {}                                     # the class mapping dictionary { new_class : old_class }
+        self.class_mapping = {}                                     # the class mapping dictionary { new_class : old_class } # note: could be a list
         self.inv_class_mapping = {}                                 # Used for rempapping tensors { old_class : new_class }
         self.NODATA_class_mapping = -100                            # used to set CrossEntropyLoss ignore index
+        self.temp_dir = None                                        # temporary directory to store preprocessed data
 
-
+        self.make_temp_dir()                                        # create a temporary directory to store the preprocessed data
         self.normalize_targets = self.normalize_targets and self.task == "regression" # only normalize targets for regression
 
         # will overwrite the passed in params
@@ -54,9 +58,9 @@ class QDataset(Dataset):
         for i,(train_ras, targ_ras) in enumerate(zip(training_rasters, target_rasters)):
             self.feedback.pushInfo(f"Raster Set {i}: [Training: {train_ras.name()},Target: {targ_ras.name()}] Bands: {train_ras.bandCount()}")
 
-            success, train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, i, self.feedback, self.context)
+            train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, i, self.feedback, self.context)
 
-            assert success, f"Error: Could not align rasters {train_ras.name(),targ_ras.name()}"
+            assert train_ras_align is not None and targ_ras_align is not None, f"Error: Could not align rasters {train_ras.name(),targ_ras.name()}"
             assert targ_ras.bandCount() == 1, f"Error: Target Raster has more than 1 band {targ_ras.name()}"
 
             self.bands = min(self.bands, train_ras.bandCount()) # Set band count to lowest of any raster in list
@@ -79,10 +83,72 @@ class QDataset(Dataset):
         # then it wont have to shift them for the output
         self.add_NODATA_class_mapping()
 
+        self.preprocess_and_save() # preprocess and save the data to a file
+
         assert len(self.chunk_indices) > 0, "Error: No Chunks Found"
         assert len(self.aligned_rasters) > 0, "Error: No Aligned Rasters Found"
         assert self.bands > 0, "Error: No Bands Found"
         assert len(self.norm_params_train) == self.bands, "Error: Normalization Parameters for Training Data not initialized properly"
+
+    # make a temporary directory in the plugin folder to store the preprocessed data
+    def make_temp_dir(self) -> str:
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        # create a temporary directory to store the preprocessed data
+        self.temp_dir = os.path.join(dir_path, "temp")
+        self.clear_temp_dir()
+        if not os.path.exists(self.temp_dir):
+            os.makedirs(self.temp_dir)
+
+        self.feedback.pushInfo(f"Created Temporary Directory: {self.temp_dir}")
+        return self.temp_dir
+
+    # clear the temporary directory
+    def clear_temp_dir(self):
+        if os.path.exists(self.temp_dir):
+            for file in os.listdir(self.temp_dir):
+                os.remove(os.path.join(self.temp_dir, file))
+
+    # preprocess each file in the dataset and save the numpy array to a file
+    # this saves time and repeted computation during the training loop
+    def preprocess_and_save(self):
+        for i, chX, chY in self.chunk_indices:
+            # Get Chunks
+            train_filename, target_filename = self.aligned_rasters[i]
+            # Get Chunk Data
+            training_chunk = self.read_chunk(train_filename, chX, chY)
+            target_chunk = self.read_chunk(target_filename, chX, chY)
+            # Create Tensors
+            training_tensor = torch.tensor(training_chunk, dtype=torch.float32)
+            target_tensor = torch.tensor(target_chunk, dtype=torch.float32)
+
+            # Normalize training data
+            if self.normalize_inputs:
+                training_tensor = QUtils.normalize(training_tensor, self.NODATA, self.norm_params_train, self.feedback)
+
+            if self.task == "regression": # need to normalize regression targets for now to prevent exploding gradients
+                target_tensor = QUtils.normalize(target_tensor, self.NODATA, self.norm_params_target, self.feedback)
+            else: # convert to long tensor before class remapping
+                target_tensor = torch.round(target_tensor).long()
+
+            target_tensor = self.remap_classes(target_tensor)
+            
+            # Save the preprocessed data to a file
+            self.save_preprocessed_data(i, chX, chY, False, training_tensor)
+            self.save_preprocessed_data(i, chX, chY, True, target_tensor)
+    
+    # consistent filename format for saving / loading preprocessed data
+    def make_filename(self, i: int, chX: int, chY: int, is_target: bool) -> str:
+        return f"{i}_{chX}_{chY}_{'target' if is_target else 'train'}.pt"
+
+    # save the preprocessed data to a file
+    def save_preprocessed_data(self, i: int, chX: int, chY: int, is_target: bool, data: torch.tensor):
+        torch.save(data, os.path.join(self.temp_dir, self.make_filename(i, chX, chY, is_target)))
+
+    # load the preprocessed data from a file
+    def load_preprocessed_data(self, i: int, chX: int, chY: int, is_target: bool) -> torch.tensor:
+        return torch.load(os.path.join(self.temp_dir, self.make_filename(i, chX, chY, is_target)))
+
+
 
     # preloads the checkpoint data for retraining before processing the dataset
     def load_checkpoint_data(self):
@@ -170,26 +236,11 @@ class QDataset(Dataset):
     def __getitem__(self, idx):
         # Get Chunks
         raster_idx, chX, chY = self.chunk_indices[idx]
-        train_filename, target_filename = self.aligned_rasters[raster_idx]
-        # Get Chunk Data
-        training_chunk = self.read_chunk(train_filename, chX, chY)
-        target_chunk = self.read_chunk(target_filename, chX, chY)
-        # Create Tensors
-        training_tensor = torch.tensor(training_chunk, dtype=torch.float32)
-        target_tensor = torch.tensor(target_chunk, dtype=torch.float32)
+        train_data = self.load_preprocessed_data(raster_idx, chX, chY, False)
+        target_data = self.load_preprocessed_data(raster_idx, chX, chY, True)
 
-        # Normalize training data
-        if self.normalize_inputs:
-            training_tensor = QUtils.normalize(training_tensor, self.NODATA, self.norm_params_train, self.feedback)
+        return train_data, target_data
 
-        if self.task == "regression": # need to normalize regression targets for now to prevent exploding gradients
-            target_tensor = QUtils.normalize(target_tensor, self.NODATA, self.norm_params_target, self.feedback)
-        else: # convert to long tensor before class remapping
-            target_tensor = torch.round(target_tensor).long()
-        
-
-        # Return training data and remapped target data
-        return training_tensor, self.remap_classes(target_tensor)
     
     # preform class remapping based on dictionary (target raster)
     def remap_classes(self, tensor : torch.tensor) -> torch.tensor:

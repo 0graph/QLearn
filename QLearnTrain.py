@@ -1,3 +1,6 @@
+# Note: add option to specifiy seperate testing set
+# models where testing and training data are from the same set can be overfit and not generalize well
+
 import torch
 from torch.utils.data import DataLoader, random_split
 from .QLearnUNet import QUNet
@@ -226,6 +229,7 @@ class QUNetTrainer:
 
         self.feedback.pushInfo("Training Finished!")
         self.save_model()
+        self.dataset.clear_temp_dir()
 
     # report progress, accuracy, and loss
     def log_progress(self, epoch: int, train_metrics: TrainingMetrics, val_metrics: TrainingMetrics):
@@ -269,9 +273,12 @@ class QUNetTrainer:
             return 0, 0
         
         preds = outputs.argmax(dim=1)
+        # issue with calculating prediction accuracy -> probaby because preds have NODATA values in them
         correct = (preds[mask] == targets[mask]).sum().item()
         return correct, valid_pixels
 
+    # Note: track loss and save best model
+    # Note: preform training, validation, and testing 
     def save_model(self):
         # TODO: refactor into a dataclass with methods for properly loading and saving
         checkpoint = {
