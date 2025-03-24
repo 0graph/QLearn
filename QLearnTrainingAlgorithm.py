@@ -40,13 +40,14 @@ from qgis.core import (Qgis,
                        QgsProcessingParameterBoolean,
                        QgsProcessingParameterEnum,
                        QgsProcessingParameterFile,
-                       QgsProcessingParameterNumber)
+                       QgsProcessingParameterNumber, 
+                       QgsApplication)
 
 from .QLearnDataset import QDataset
 from .QLearnTrain import QUNetTrainer
+from .QLearnRasterSelectWidget import *
 import torch
-import traceback
-import cProfile, os, io, pstats, datetime
+import cProfile, os, datetime
 
 
 class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
@@ -71,9 +72,8 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     # used when calling the algorithm from another algorithm, or when
     # calling from the QGIS console.
 
+    RASTER_PAIRS = 'RASTER_PAIRS'
     OUTPUT_MODEL = 'OUTPUT_MODEL'
-    INPUT_TRAIN = 'INPUT_TRAINING_RASTER'
-    INPUT_TARGET = 'INPUT_TARGET_RASTER'
     ARGS_NODATA = 'ARGS_NODATA'
     ARGS_NORMALIZE = 'ARGS_NORMALIZE'
     ARGS_EPOCHS = 'ARGS_EPOCH'
@@ -89,18 +89,10 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         with some other properties.
         """
 
-        # Input Training Rasters
         self.addParameter(
-            QgsProcessingParameterRasterLayer(
-            self.INPUT_TRAIN,
-            self.tr("Input raster"))
-        )
-
-        # Input Target Rasters
-        self.addParameter(
-            QgsProcessingParameterRasterLayer(
-            self.INPUT_TARGET,
-            self.tr("Target raster"))
+            RasterPairParameter(
+                self.RASTER_PAIRS, 
+                'Select raster pairs')
         )
 
         self.addParameter(
@@ -166,15 +158,13 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     def processAlgorithm(self, parameters, context, feedback):
         # Note: pip install snakeviz to view profiling data
         # Note: snakviz profile.prof
-        doProfiling = True # Set to False to disable profiling
+        doProfiling = False # Set to False to disable profiling
 
         """
         Here is where the processing itself takes place.
         """
 
         # Fetch Input Parameters from Dict
-        training_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TRAIN, context)
-        target_raster = self.parameterAsRasterLayer(parameters, self.INPUT_TARGET, context)
         current_model = self.parameterAsFile(parameters,self.INPUT_MODEL, context)
         model_save_loc = self.parameterAsFileOutput(parameters, self.OUTPUT_MODEL, context)
         n_epochs = self.parameterAsInt(parameters,self.ARGS_EPOCHS, context)
@@ -182,6 +172,9 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         training_type = self.parameterAsEnum(parameters,self.ARGS_TRAINTYPE, context)
         normalize_inputs = self.parameterAsBoolean(parameters,self.ARGS_NORMALIZE, context)
         learning_rate = self.parameterAsDouble(parameters, self.ARGS_LR, context)
+        raster_pairs = self.parameterAsString(parameters, self.RASTER_PAIRS, context)
+
+        feedback.pushInfo(f"raster pairs: {raster_pairs}")
 
         # look at argparse
         args = {
@@ -216,7 +209,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
 
 
         # Setup Dataset
-        dataset = QDataset([training_raster], [target_raster], context, feedback, args, checkpoint)
+        dataset = QDataset(raster_pairs, context, feedback, args, checkpoint)
         trainer = QUNetTrainer(dataset,model_save_loc, feedback, args, checkpoint)
         try:
             trainer.train()

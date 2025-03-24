@@ -1,10 +1,9 @@
 
-import torch
-import os 
+import torch, os, json
 from torch.utils.data import Dataset
 import numpy as np
 import numpy.ma as ma
-from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsRasterDataProvider, QgsRectangle, QgsRasterBlock, Qgis
+from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsRectangle, QgsRasterBlock, Qgis
 from .QLearnUtils import QUtils, NormalizationParams
 
 from .QRasterNumpy import *
@@ -35,15 +34,13 @@ class QDataLoader(Dataset):
 # Class for loading and preprocessing the dataset
 class QDataset():
     def __init__(self,
-                 training_rasters: list[QgsRasterLayer],
-                 target_rasters: list[QgsRasterLayer],
+                 raster_pairs: list[tuple[QgsRasterLayer, QgsRasterLayer]],
                  context: QgsProcessingContext,
                  feedback: QgsProcessingFeedback,
                  args: dict,
                  checkpoint: dict):
         
-        self.training_rasters = training_rasters
-        self.target_rasters = target_rasters
+        self.raster_pairs = json.loads(raster_pairs) # data is in json string format "[[r1,r2],[r3,r4],...]"
         self.context = context
         self.feedback = feedback
         self.chunk_indices = []                                     # Indices of each chunk for each raster in aligned_rasters
@@ -73,11 +70,13 @@ class QDataset():
         # will overwrite the passed in params
         self.load_checkpoint_data() # load checkpoint data if it exists
 
-        assert len(training_rasters) == len(target_rasters), "Length of Input Rasters and Target Rasters does not match"
         
         # Align each pair of rasters and save it to a temporary file if valid
         # additionally calculate the total chunks and normalization values
-        for i,(train_ras, targ_ras) in enumerate(zip(training_rasters, target_rasters)):
+        for i,(train_src, targ_src) in enumerate(self.raster_pairs):
+            train_ras = QgsRasterLayer(train_src)
+            targ_ras = QgsRasterLayer(targ_src)
+
             self.feedback.pushInfo(f"Raster Set {i}: [Training: {train_ras.name()},Target: {targ_ras.name()}] Bands: {train_ras.bandCount()}")
 
             train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, i, self.feedback, self.context)
