@@ -16,10 +16,20 @@ class NormalizationParams:
         self.mean = 0.0     # mean of values seen so far
         self.M2 = 0.0       # sum of squares of differences from mean
 
+    def calc_M2(self, arr: np.ndarray):
+        mean = arr.mean()
+        return np.sum((arr - mean) ** 2)
+
     # update based on array
+    # Chan's parallel algorithm (see source above)
     def update_from_array(self, arr: np.ndarray):
-        for x in arr.flatten():
-            self.update(x)
+        flat = arr.flatten()
+        comb_n = self.n + len(flat)
+        comb_delta = flat.mean() - self.mean
+        comb_delta2 = self.M2 + self.calc_M2(flat) + (comb_delta ** 2) * self.n * len(flat) / comb_n
+        self.n = comb_n
+        self.mean += comb_delta * len(flat) / comb_n
+        self.M2 = comb_delta2
 
     # update mean and std
     def update(self, x: float):
