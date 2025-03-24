@@ -4,7 +4,7 @@
 import torch
 from torch.utils.data import DataLoader, random_split
 from .QLearnUNet import QUNet
-from .QLearnDataset import QDataset
+from .QLearnDataset import QDataset, QDataLoader
 import torch.optim as optim
 import torch.nn as nn
 from qgis.core import QgsProcessingFeedback
@@ -39,7 +39,7 @@ class QUNetTrainer:
                                                                         
         # Setup PyTorch Training Objects
         self.setup_model()
-        self.setup_dataloaders(self.dataset)
+        self.setup_dataloaders(self.dataset.PyTorchDataset)
         self.setup_OSL()
 
         self.load_checkpoint_data()
@@ -95,7 +95,7 @@ class QUNetTrainer:
         ).to(self.device)                                               # Set device to be used for processing
 
     # Configure the dataloaders for training and validation based on the validation split
-    def setup_dataloaders(self, dataset: QDataset) -> None:
+    def setup_dataloaders(self, dataset: QDataLoader) -> None:
 
         # Calculate training & validation dataset split
         val_size = int(self.val_split * len(dataset))

@@ -10,8 +10,30 @@ from .QLearnUtils import QUtils, NormalizationParams
 from .QRasterNumpy import *
 
 
-# Class format used by pytorch dataloader
-class QDataset(Dataset):
+# class used by PyTorch DataLoader
+class QDataLoader(Dataset):
+    def __init__(self, chunk_indicies: list, temp_dir: str):
+        self.chunk_indices = chunk_indicies
+        self.temp_dir = temp_dir
+
+    # load the preprocessed data from a file
+    def load_preprocessed_data(self, i: int, chX: int, chY: int, is_target: bool) -> torch.tensor:
+        return torch.load(os.path.join(self.temp_dir, QDataset.make_filename(i, chX, chY, is_target)))
+
+    def __len__(self):
+        return len(self.chunk_indices)
+    
+    def __getitem__(self, idx):
+        # Get Chunks
+        raster_idx, chX, chY = self.chunk_indices[idx]
+        train_data = self.load_preprocessed_data(raster_idx, chX, chY, False)
+        target_data = self.load_preprocessed_data(raster_idx, chX, chY, True)
+
+        return train_data, target_data
+
+
+# Class for loading and preprocessing the dataset
+class QDataset():
     def __init__(self,
                  training_rasters: list[QgsRasterLayer],
                  target_rasters: list[QgsRasterLayer],
@@ -85,6 +107,9 @@ class QDataset(Dataset):
 
         self.preprocess_and_save() # preprocess and save the data to a file
 
+        # Create PyTorch Dataset to be used by DataLoader
+        self.PyTorchDataset = QDataLoader(self.chunk_indices, self.temp_dir)
+
         assert len(self.chunk_indices) > 0, "Error: No Chunks Found"
         assert len(self.aligned_rasters) > 0, "Error: No Aligned Rasters Found"
         assert self.bands > 0, "Error: No Bands Found"
@@ -137,18 +162,13 @@ class QDataset(Dataset):
             self.save_preprocessed_data(i, chX, chY, True, target_tensor)
     
     # consistent filename format for saving / loading preprocessed data
-    def make_filename(self, i: int, chX: int, chY: int, is_target: bool) -> str:
+    @staticmethod
+    def make_filename(i: int, chX: int, chY: int, is_target: bool) -> str:
         return f"{i}_{chX}_{chY}_{'target' if is_target else 'train'}.pt"
 
     # save the preprocessed data to a file
     def save_preprocessed_data(self, i: int, chX: int, chY: int, is_target: bool, data: torch.tensor):
         torch.save(data, os.path.join(self.temp_dir, self.make_filename(i, chX, chY, is_target)))
-
-    # load the preprocessed data from a file
-    def load_preprocessed_data(self, i: int, chX: int, chY: int, is_target: bool) -> torch.tensor:
-        return torch.load(os.path.join(self.temp_dir, self.make_filename(i, chX, chY, is_target)))
-
-
 
     # preloads the checkpoint data for retraining before processing the dataset
     def load_checkpoint_data(self):
@@ -228,19 +248,6 @@ class QDataset(Dataset):
         # Debugging statements
         # self.feedback.pushInfo(f"Finalized Class Mapping: {self.class_mapping}")  
         # self.feedback.pushInfo(f"Finalized Inverse Class Mapping: {self.inv_class_mapping}")
-
-
-    def __len__(self):
-        return len(self.chunk_indices)
-
-    def __getitem__(self, idx):
-        # Get Chunks
-        raster_idx, chX, chY = self.chunk_indices[idx]
-        train_data = self.load_preprocessed_data(raster_idx, chX, chY, False)
-        target_data = self.load_preprocessed_data(raster_idx, chX, chY, True)
-
-        return train_data, target_data
-
     
     # preform class remapping based on dictionary (target raster)
     def remap_classes(self, tensor : torch.tensor) -> torch.tensor:

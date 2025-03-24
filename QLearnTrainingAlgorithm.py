@@ -46,12 +46,13 @@ from .QLearnDataset import QDataset
 from .QLearnTrain import QUNetTrainer
 import torch
 import traceback
+import cProfile, os, io, pstats, datetime
 
 
 class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     
     def flags(self):
-        return super().flags() | QgsProcessingAlgorithm.FlagNoThreading
+        return super().flags()
     
     """
     This is an example algorithm that takes a vector layer and
@@ -163,6 +164,10 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
 
 
     def processAlgorithm(self, parameters, context, feedback):
+        # Note: pip install snakeviz to view profiling data
+        # Note: snakviz profile.prof
+        doProfiling = True # Set to False to disable profiling
+
         """
         Here is where the processing itself takes place.
         """
@@ -203,6 +208,13 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             feedback.pushInfo(f"Loaded checkpoint from {current_model}")
 
 
+        # SETUP PROFILING
+        if doProfiling:
+            profiler = cProfile.Profile()
+            profiler.enable()
+        # SETUP PROFILING
+
+
         # Setup Dataset
         dataset = QDataset([training_raster], [target_raster], context, feedback, args, checkpoint)
         trainer = QUNetTrainer(dataset,model_save_loc, feedback, args, checkpoint)
@@ -211,11 +223,33 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         except Exception as e:
             feedback.reportError(str(e))
             raise e
+        
 
+
+        # FINISH PROFILING
+        if doProfiling:
+            self.finish_profiling(profiler, feedback)
+            
+
+        # FINISH PROFILING
 
 
         return {self.OUTPUT_MODEL: model_save_loc}
 
+    def finish_profiling(self, profiler, feedback):
+        # make profiling directory
+        profile_dir = os.path.join(os.path.dirname(__file__), "profile_results")
+        os.makedirs(profile_dir, exist_ok=True)
+        
+        # Create filename
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        profile_file = os.path.join(profile_dir, f"profile_{timestamp}.prof")
+        report_file = os.path.join(profile_dir, f"profile_{timestamp}.txt")
+        
+                
+        # Save raw profile data
+        profiler.disable()
+        profiler.dump_stats(profile_file)
 
     def name(self):
         """
