@@ -73,7 +73,7 @@ class QDataset():
         
         # Align each pair of rasters and save it to a temporary file if valid
         # additionally calculate the total chunks and normalization values
-        for i,(train_src, targ_src) in enumerate(self.raster_pairs):
+        for i,(train_src, targ_src, isValidation) in enumerate(self.raster_pairs):
             train_ras = QgsRasterLayer(train_src)
             targ_ras = QgsRasterLayer(targ_src)
 

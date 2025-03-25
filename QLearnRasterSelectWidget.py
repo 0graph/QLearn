@@ -1,14 +1,14 @@
 import json
-from qgis.PyQt.QtWidgets import (QTableWidget, QComboBox, QPushButton, 
-                                 QVBoxLayout, QWidget, QHeaderView)
+import os
+from qgis.PyQt.QtWidgets import (QTableWidget, QComboBox, QPushButton, QCheckBox,
+                                 QVBoxLayout, QWidget, QHeaderView, QFileDialog, QHBoxLayout)
+from qgis.PyQt.QtCore import Qt
 from qgis.core import (QgsProcessingParameterDefinition,
                        QgsProcessingAlgorithm,
                        QgsProject, QgsRasterLayer,
                        QgsProcessingParameterString)
-from qgis.gui import QgsAbstractProcessingParameterWidgetWrapper
+from qgis.gui import QgsAbstractProcessingParameterWidgetWrapper, QgsFileWidget
 
-# TODO: Allow the user to select a raster from disk
-# TODO: Add a checkbox for selecting pairs to be used only as validation data
 
 # Custom Widget for selecting pairs of rasters
 class RasterPairWidgetWrapper(QgsAbstractProcessingParameterWidgetWrapper):
@@ -25,9 +25,11 @@ class RasterPairWidgetWrapper(QgsAbstractProcessingParameterWidgetWrapper):
         self._widget = QWidget()
         layout = QVBoxLayout()
         
-        self.table = QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels(['Training', 'Target'])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(['Training', 'Target', 'Validation Only'])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         
         btn_add = QPushButton("Add Pair")
         btn_add.clicked.connect(self.add_pair)
@@ -44,7 +46,13 @@ class RasterPairWidgetWrapper(QgsAbstractProcessingParameterWidgetWrapper):
     def add_pair(self):
         row = self.table.rowCount()
         self.table.insertRow(row)
-        self.populate_combos(row)
+        self.create_combo_widget(row, 0)
+        self.create_combo_widget(row, 1)
+        self.create_checkbox_widget(row)
+
+    # Emit the value changed signal
+    def emit_value_changed(self):
+        pass
 
     # Remove the selected pair from the table
     def remove_pair(self):
@@ -52,21 +60,60 @@ class RasterPairWidgetWrapper(QgsAbstractProcessingParameterWidgetWrapper):
             current_row = self.table.currentRow() if self.table.currentRow() != -1 else self.table.rowCount() - 1
             self.table.removeRow(current_row)
 
-    # Adds all the raster layers in the project to the combo boxes
-    def populate_combos(self, row):
-        rasters = [lyr for lyr in QgsProject.instance().mapLayers().values()
-                   if isinstance(lyr, QgsRasterLayer)]
-        
-        for col in range(2):
-            combo = QComboBox()
-            combo.addItem("")  # Empty selection
-            for lyr in rasters:
-                combo.addItem(lyr.name(), lyr.source())
-            combo.currentIndexChanged.connect(self.emit_value_changed)
-            self.table.setCellWidget(row, col, combo)
 
-    def emit_value_changed(self):
-        pass
+    # Creates a file widget that is used in the combo boxes
+    def create_file_widget(self, row, col):
+        file_widget = QgsFileWidget()
+        file_widget.setFilter("Raster files (*.tif *.tiff *.geotiff *.img *.jp2 *.hdr *.asc *.grd);;All files (*.*)")
+        file_widget.setDialogTitle("Select Raster File")
+        file_widget.setStorageMode(QgsFileWidget.StorageMode.File)
+        file_widget.setDefaultRoot(QgsProject.instance().homePath())
+        return file_widget
+
+
+    # Adds all the raster layers in the project to the combo boxes
+    def create_combo_widget(self, row, col):
+        widget = QWidget()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        combo = QComboBox()
+        combo.addItem("")
+        for lyr in QgsProject.instance().mapLayers().values():
+            if isinstance(lyr, QgsRasterLayer):
+                combo.addItem(lyr.name(), lyr.source())
+        
+        btn = self.create_file_widget()
+        
+        layout.addWidget(combo)
+        layout.addWidget(btn)
+        widget.setLayout(layout)
+        widget.combo = combo
+        combo.currentIndexChanged.connect(self.emit_value_changed)
+        self.table.setCellWidget(row, col, widget)
+
+    def create_checkbox_widget(self, row):
+        checkbox = QCheckBox()
+        checkbox.stateChanged.connect(self.emit_value_changed)
+        self.table.setCellWidget(row, 2, checkbox)
+
+    def select_file(self, row, col):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self._widget,
+            "Select Raster File",
+            "",
+            "Raster Files (*.tif *.tiff *.geotiff *.img *.jp2 *.hdr *.asc *.grd)"
+        )
+        if file_path:
+            widget = self.table.cellWidget(row, col)
+            combo = widget.combo
+            idx = combo.findData(file_path)
+            if idx == -1:
+                combo.addItem(os.path.basename(file_path), file_path)
+                idx = combo.count() - 1
+            combo.setCurrentIndex(idx)
+
+
 
     # set the values of the rasters in the widget based on a json string
     def setWidgetValue(self, value, context):
@@ -77,28 +124,47 @@ class RasterPairWidgetWrapper(QgsAbstractProcessingParameterWidgetWrapper):
                 for pair in pairs:
                     row = self.table.rowCount()
                     self.table.insertRow(row)
-                    self._populate_combos(row)
-                    for col, layer_id in enumerate(pair):
-                        combo = self.table.cellWidget(row, col)
-                        idx = combo.findData(layer_id)
-                        combo.setCurrentIndex(idx if idx != -1 else 0)
+                    self.create_combo_widget(row, 0)
+                    self.create_combo_widget(row, 1)
+                    self.create_checkbox_widget(row)
+
+                    if len(pair) >= 3:
+                        training_source, target_source, validation = pair[:3]
+                    else:
+                        training_source, target_source = pair[:2]
+                        validation = False
+
+                    self.set_combo_value(row, 0, training_source)
+                    self.set_combo_value(row, 1, target_source)
+                    self.table.cellWidget(row, 2).setChecked(validation)
             except json.JSONDecodeError:
                 pass
 
-    # get the values of the rasters in the widget as a json string
+    def set_combo_value(self, row, col, value):
+        if not value:
+            return
+        widget = self.table.cellWidget(row, col)
+        combo = widget.combo
+        idx = combo.findData(value)
+        if idx == -1:
+            combo.addItem(os.path.basename(value), value)
+            idx = combo.count() - 1
+        combo.setCurrentIndex(idx)
+
     def widgetValue(self):
         pairs = []
         for row in range(self.table.rowCount()):
-            pair = [
-                self.table.cellWidget(row, 0).currentData(),
-                self.table.cellWidget(row, 1).currentData()
-            ]
-            if all(pair):
-                pairs.append(pair)
-        return json.dumps(pairs)
+            training_widget = self.table.cellWidget(row, 0)
+            target_widget = self.table.cellWidget(row, 1)
+            training = training_widget.combo.currentData()
+            target = target_widget.combo.currentData()
+            validation = self.table.cellWidget(row, 2).isChecked()
+            
+            if training and target:
+                pairs.append([training, target, validation])
+        return json.dumps(pairs) if pairs else ""
 
 
-# Custom parameter definition for selecting pairs of rasters
 class RasterPairParameter(QgsProcessingParameterDefinition):
     def __init__(self, name, description=""):
         super().__init__(name, description)
