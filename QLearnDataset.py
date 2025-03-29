@@ -43,7 +43,8 @@ class QDataset():
         self.raster_pairs = json.loads(raster_pairs) # data is in json string format "[[r1,r2],[r3,r4],...]"
         self.context = context
         self.feedback = feedback
-        self.chunk_indices = []                                     # Indices of each chunk for each raster in aligned_rasters
+        self.chunk_indices = []                                     # Indices of each chunk for each raster for training rasters
+        self.test_chunk_indices = []                                # Indices of each chunk for each raster for testing rasters
         self.aligned_rasters = []                                   # The list of aligned raster filenames
         self.chunkSize = args["CHUNK_SIZE"]                         # Split Images into Chunks of this size
         self.NODATA = args["NODATA"]                                # NoData Value for rasters
@@ -73,7 +74,7 @@ class QDataset():
         
         # Align each pair of rasters and save it to a temporary file if valid
         # additionally calculate the total chunks and normalization values
-        for i,(train_src, targ_src, isValidation) in enumerate(self.raster_pairs):
+        for i,(train_src, targ_src, isTesting) in enumerate(self.raster_pairs):
             train_ras = QgsRasterLayer(train_src)
             targ_ras = QgsRasterLayer(targ_src)
 
@@ -90,7 +91,12 @@ class QDataset():
             train_ras = QgsRasterLayer(train_ras_align)
             targ_ras = QgsRasterLayer(targ_ras_align)
             chX, chY = QUtils.calculate_chunks(train_ras, self.chunkSize)
-            self.chunk_indices.extend([(i, x, y) for x in range(chX) for y in range(chY)])
+
+            # add the chunk indices to the list
+            if isTesting:
+                self.test_chunk_indices.extend([(i, x, y) for x in range(chX) for y in range(chY)])
+            else:
+                self.chunk_indices.extend([(i, x, y) for x in range(chX) for y in range(chY)])
 
             # Add Class mappings from aligned rasters
             if self.task == "classification" and self.do_class_mapping:
@@ -108,6 +114,13 @@ class QDataset():
 
         # Create PyTorch Dataset to be used by DataLoader
         self.PyTorchDataset = QDataLoader(self.chunk_indices, self.temp_dir)
+        
+        if len(self.test_chunk_indices) > 0:
+            # Create PyTorch Dataset for testing data
+             self.TestPyTorchDataset = QDataLoader(self.test_chunk_indices, self.temp_dir)
+
+        self.feedback.pushInfo(f"Created training dataset with {len(self.chunk_indices)} chunks")
+        self.feedback.pushInfo(f"Created testing dataset with {len(self.test_chunk_indices)} chunks")
 
         assert len(self.chunk_indices) > 0, "Error: No Chunks Found"
         assert len(self.aligned_rasters) > 0, "Error: No Aligned Rasters Found"
@@ -135,7 +148,9 @@ class QDataset():
     # preprocess each file in the dataset and save the numpy array to a file
     # this saves time and repeted computation during the training loop
     def preprocess_and_save(self):
-        for i, chX, chY in self.chunk_indices:
+        all_chunks = self.chunk_indices + self.test_chunk_indices
+
+        for i, chX, chY in all_chunks:
             # Get Chunks
             train_filename, target_filename = self.aligned_rasters[i]
             # Get Chunk Data
@@ -224,10 +239,6 @@ class QDataset():
             data = targ_ras.as_numpy(use_masking=True)
 
             self.norm_params_target[0].update_from_array(data)
-
-        self.feedback.pushInfo(f"Training Normalization Params: {self.norm_params_train}")
-        self.feedback.pushInfo(f"Target Normalization Params: {self.norm_params_target}")
-                
         
 
     def add_NODATA_class_mapping(self):

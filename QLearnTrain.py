@@ -121,6 +121,50 @@ class QUNetTrainer:
         assert len(self.train_dataset) > 0, "Training dataset is empty"
         assert len(self.val_dataset) > 0, "Validation dataset is empty"
 
+    def evaluate_model(self):
+        if not hasattr(self.dataset, "TestPyTorchDataset"):
+            self.feedback.pushInfo("No test dataset found")
+            return
+        
+        self.feedback.pushInfo("Evaluating Model...")
+        # Set up test data loader
+        test_dl = DataLoader(self.dataset.TestPyTorchDataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+
+        self.model.eval()
+        total_loss = 0.0
+        total_correct = 0
+        total_valid = 0
+
+        with torch.no_grad():
+            for images, targets in test_dl:
+                # training was cancelled -> exit
+                if self.checkCancel():
+                    return
+                
+                images, targets = images.to(self.device), targets.to(self.device)
+                targets = self.prepare_targets(targets)
+                
+                # Calculate loss
+                outputs = self.model(images)
+                loss = self.criterion_loss(outputs, targets, images)
+                total_loss += loss.item()
+                if self.task == "classification":
+                    correct, valid = self.calculate_pred_accuracy(outputs, targets)
+                    total_correct += correct
+                    total_valid += valid
+
+        # Finalize the accuracy calculations
+        metrics = TrainingMetrics(loss=total_loss / len(test_dl))
+        
+        self.feedback.pushInfo("---------- Model Evaluation ----------")
+        if self.task == "classification":
+            metrics.accuracy = total_correct / total_valid if total_valid > 0 else 0.0
+            self.feedback.pushInfo(f"Test Accuracy: {metrics.accuracy:.2%}")
+        self.feedback.pushInfo(f"Test Loss: {metrics.loss:.4f}")
+        self.feedback.pushInfo("Model Evaluation Finished!")
+        self.feedback.pushInfo("--------------------------------------")
+
+
     # Execute a single epoch of training
     def train_epoch(self) -> TrainingMetrics:
         self.model.train()
@@ -228,6 +272,9 @@ class QUNetTrainer:
             
 
         self.feedback.pushInfo("Training Finished!")
+
+        self.evaluate_model() # Evaluate the model on the test set (if available)
+
         self.save_model()
         self.dataset.clear_temp_dir()
 
@@ -281,6 +328,7 @@ class QUNetTrainer:
     # Note: preform training, validation, and testing 
     def save_model(self):
         # TODO: refactor into a dataclass with methods for properly loading and saving
+        self.feedback.pushInfo(f"Saving model to {self.model_output_location}")
         checkpoint = {
             "model_params": {
                 "in_channels": self.dataset.bands,

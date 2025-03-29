@@ -1,16 +1,13 @@
 import json
 import os
 from qgis.PyQt.QtWidgets import (QTableWidget, QComboBox, QPushButton, QCheckBox,
-                                 QVBoxLayout, QWidget, QHeaderView, QFileDialog, QHBoxLayout)
-from qgis.PyQt.QtCore import Qt
+                                 QVBoxLayout, QWidget, QHeaderView, QHBoxLayout)
+from qgis.PyQt.QtCore import Qt, QObject
 from qgis.core import (QgsProcessingParameterDefinition,
-                       QgsProcessingAlgorithm,
-                       QgsProject, QgsRasterLayer,
-                       QgsProcessingParameterString)
-from qgis.gui import QgsAbstractProcessingParameterWidgetWrapper, QgsFileWidget
+                       QgsProject, QgsRasterLayer)
+from qgis.gui import (QgsAbstractProcessingParameterWidgetWrapper,
+                      QgsFileWidget)
 
-
-# Custom Widget for selecting pairs of rasters
 class RasterPairWidgetWrapper(QgsAbstractProcessingParameterWidgetWrapper):
     def __init__(self, param, parent, *args, **kwargs):
         super().__init__(param, parent=parent)
@@ -26,7 +23,7 @@ class RasterPairWidgetWrapper(QgsAbstractProcessingParameterWidgetWrapper):
         layout = QVBoxLayout()
         
         self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(['Training', 'Target', 'Validation Only'])
+        self.table.setHorizontalHeaderLabels(['Training', 'Target', 'Eval Only'])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
@@ -50,28 +47,6 @@ class RasterPairWidgetWrapper(QgsAbstractProcessingParameterWidgetWrapper):
         self.create_combo_widget(row, 1)
         self.create_checkbox_widget(row)
 
-    # Emit the value changed signal
-    def emit_value_changed(self):
-        pass
-
-    # Remove the selected pair from the table
-    def remove_pair(self):
-        if self.table.rowCount() > 0:
-            current_row = self.table.currentRow() if self.table.currentRow() != -1 else self.table.rowCount() - 1
-            self.table.removeRow(current_row)
-
-
-    # Creates a file widget that is used in the combo boxes
-    def create_file_widget(self, row, col):
-        file_widget = QgsFileWidget()
-        file_widget.setFilter("Raster files (*.tif *.tiff *.geotiff *.img *.jp2 *.hdr *.asc *.grd);;All files (*.*)")
-        file_widget.setDialogTitle("Select Raster File")
-        file_widget.setStorageMode(QgsFileWidget.StorageMode.File)
-        file_widget.setDefaultRoot(QgsProject.instance().homePath())
-        return file_widget
-
-
-    # Adds all the raster layers in the project to the combo boxes
     def create_combo_widget(self, row, col):
         widget = QWidget()
         layout = QHBoxLayout()
@@ -79,43 +54,68 @@ class RasterPairWidgetWrapper(QgsAbstractProcessingParameterWidgetWrapper):
         
         combo = QComboBox()
         combo.addItem("")
+        self.populate_project_layers(combo)
+        
+        file_widget = self.create_file_widget()
+        
+        # Connect signals for two-way binding
+        file_widget.fileChanged.connect(
+            lambda path, c=combo: self.update_combo_from_file(c, path))
+        combo.currentIndexChanged.connect(
+            lambda: self.update_file_widget_from_combo(combo, file_widget))
+        
+        layout.addWidget(combo)
+        layout.addWidget(file_widget)
+        widget.setLayout(layout)
+        widget.combo = combo
+        widget.file_widget = file_widget
+        self.table.setCellWidget(row, col, widget)
+
+    def create_file_widget(self):
+        file_widget = QgsFileWidget()
+        file_widget.setFilter("Raster files (*.tif *.tiff *.geotiff *.img *.jp2 *.hdr *.asc *.grd);;All files (*.*)")
+        file_widget.setStorageMode(QgsFileWidget.GetFile)
+        file_widget.setDialogTitle("Select Raster File")
+        file_widget.setDefaultRoot(QgsProject.instance().homePath())
+        # remove line edit from file widget
+        file_widget.lineEdit().setVisible(False)
+        # set widget width to 30
+        file_widget.setMaximumWidth(30)
+        return file_widget
+
+    def populate_project_layers(self, combo):
+        combo.clear()
+        combo.addItem("")
         for lyr in QgsProject.instance().mapLayers().values():
             if isinstance(lyr, QgsRasterLayer):
                 combo.addItem(lyr.name(), lyr.source())
-        
-        btn = self.create_file_widget()
-        
-        layout.addWidget(combo)
-        layout.addWidget(btn)
-        widget.setLayout(layout)
-        widget.combo = combo
-        combo.currentIndexChanged.connect(self.emit_value_changed)
-        self.table.setCellWidget(row, col, widget)
 
-    def create_checkbox_widget(self, row):
-        checkbox = QCheckBox()
-        checkbox.stateChanged.connect(self.emit_value_changed)
-        self.table.setCellWidget(row, 2, checkbox)
-
-    def select_file(self, row, col):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self._widget,
-            "Select Raster File",
-            "",
-            "Raster Files (*.tif *.tiff *.geotiff *.img *.jp2 *.hdr *.asc *.grd)"
-        )
-        if file_path:
-            widget = self.table.cellWidget(row, col)
-            combo = widget.combo
-            idx = combo.findData(file_path)
+    def update_combo_from_file(self, combo, path):
+        if path:
+            idx = combo.findData(path)
             if idx == -1:
-                combo.addItem(os.path.basename(file_path), file_path)
+                combo.addItem(os.path.basename(path), path)
                 idx = combo.count() - 1
             combo.setCurrentIndex(idx)
+        self.emit_value_changed()
 
+    def update_file_widget_from_combo(self, combo, file_widget):
+        path = combo.currentData()
+        if path:
+            file_widget.setFilePath(path)
+        self.emit_value_changed()
 
+    def create_checkbox_widget(self, row):
+        widget = QWidget()
+        checkbox = QCheckBox()
+        layout = QHBoxLayout()
+        layout.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(checkbox)
+        checkbox.stateChanged.connect(self.emit_value_changed)
+        widget.setLayout(layout)
+        self.table.setCellWidget(row, 2, widget)
 
-    # set the values of the rasters in the widget based on a json string
     def setWidgetValue(self, value, context):
         self.table.setRowCount(0)
         if value:
@@ -129,41 +129,53 @@ class RasterPairWidgetWrapper(QgsAbstractProcessingParameterWidgetWrapper):
                     self.create_checkbox_widget(row)
 
                     if len(pair) >= 3:
-                        training_source, target_source, validation = pair[:3]
+                        training, target, validation = pair[:3]
                     else:
-                        training_source, target_source = pair[:2]
+                        training, target = pair[:2]
                         validation = False
 
-                    self.set_combo_value(row, 0, training_source)
-                    self.set_combo_value(row, 1, target_source)
+                    self.set_combo_value(row, 0, training)
+                    self.set_combo_value(row, 1, target)
                     self.table.cellWidget(row, 2).setChecked(validation)
             except json.JSONDecodeError:
                 pass
 
     def set_combo_value(self, row, col, value):
-        if not value:
-            return
-        widget = self.table.cellWidget(row, col)
-        combo = widget.combo
-        idx = combo.findData(value)
-        if idx == -1:
-            combo.addItem(os.path.basename(value), value)
-            idx = combo.count() - 1
-        combo.setCurrentIndex(idx)
+        cell_widget = self.table.cellWidget(row, col)
+        if cell_widget and value:
+            combo = cell_widget.combo
+            idx = combo.findData(value)
+            if idx == -1:
+                combo.addItem(os.path.basename(value), value)
+                idx = combo.count() - 1
+            combo.setCurrentIndex(idx)
 
     def widgetValue(self):
         pairs = []
         for row in range(self.table.rowCount()):
             training_widget = self.table.cellWidget(row, 0)
             target_widget = self.table.cellWidget(row, 1)
-            training = training_widget.combo.currentData()
-            target = target_widget.combo.currentData()
-            validation = self.table.cellWidget(row, 2).isChecked()
+            
+            training = training_widget.combo.currentData() if training_widget else None
+            target = target_widget.combo.currentData() if target_widget else None
+            widget = self.table.cellWidget(row, 2)
+            if widget:
+                checkbox = widget.findChild(QCheckBox)
+                validation = checkbox.isChecked() if checkbox else False
+            else:
+                validation = False
             
             if training and target:
                 pairs.append([training, target, validation])
         return json.dumps(pairs) if pairs else ""
 
+    def emit_value_changed(self):
+        pass
+
+    def remove_pair(self):
+        if self.table.rowCount() > 0:
+            current_row = self.table.currentRow() if self.table.currentRow() != -1 else self.table.rowCount() - 1
+            self.table.removeRow(current_row)
 
 class RasterPairParameter(QgsProcessingParameterDefinition):
     def __init__(self, name, description=""):
