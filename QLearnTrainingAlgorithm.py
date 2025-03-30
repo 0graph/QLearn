@@ -31,23 +31,19 @@ __copyright__ = '(C) 2025 by Adam B'
 __revision__ = '$Format:%H$'
 
 from qgis.PyQt.QtCore import QCoreApplication
-from qgis.core import (Qgis,
-                       QgsProcessing,
-                       QgsProcessingAlgorithm,
-                       QgsProcessingParameterMultipleLayers,
+from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessingParameterFileDestination,
-                       QgsProcessingParameterRasterLayer,
                        QgsProcessingParameterBoolean,
                        QgsProcessingParameterEnum,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterNumber, 
-                       QgsApplication)
+                       QgsProcessingParameterString)
 
 from .QLearnDataset import QDataset
 from .QLearnTrain import QUNetTrainer
 from .QLearnRasterSelectWidget import *
 import torch
-import cProfile, os, datetime
+import cProfile, os, datetime, argparse, shlex
 
 
 class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
@@ -80,6 +76,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
     ARGS_LR = 'ARGS_LEARNINGRATE'
     INPUT_MODEL = 'INPUT_MODEL'
     ARGS_TRAINTYPE = 'TRAINING_TYPE'
+    ARGS_EXTRA = 'ARGS_EXTRA'
 
     training_types = ["classification","regression"]
 
@@ -154,11 +151,19 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             )
         )
 
+        self.addParameter(
+            QgsProcessingParameterString(
+                self.ARGS_EXTRA,
+                self.tr("Extra arguments"),
+                defaultValue="",
+                optional=True
+            )
+        )
+
 
     def processAlgorithm(self, parameters, context, feedback):
         # Note: pip install snakeviz to view profiling data
         # Note: snakviz profile.prof
-        doProfiling = False # Set to False to disable profiling
 
         """
         Here is where the processing itself takes place.
@@ -173,23 +178,52 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         normalize_inputs = self.parameterAsBoolean(parameters,self.ARGS_NORMALIZE, context)
         learning_rate = self.parameterAsDouble(parameters, self.ARGS_LR, context)
         raster_pairs = self.parameterAsString(parameters, self.RASTER_PAIRS, context)
+        extra_args = self.parameterAsString(parameters, self.ARGS_EXTRA, context)
 
         feedback.pushInfo(f"raster pairs: {raster_pairs}")
 
-        # look at argparse
+        # Parse extra args
+        parser = argparse.ArgumentParser(description="Extra arguments for training",exit_on_error=False)
+        parser.add_argument("-b", "--batch_size", type=int, default=16, help="Batch size for training", required=False)
+        parser.add_argument("-d","--depth", type=int, default=4, help="Depth of the UNet Model", required=False)
+        parser.add_argument("-c","--channels", type=int, default=64, help="Number of input channels for UNet Model", required=False)
+        parser.add_argument("-v","--validation_split", type=float, default=0.2, help="Validation split for training", required=False)
+        parser.add_argument("-n","--normalize_targets", type=bool, default=True, help="Normalize target data (regression only)", required=False)
+        parser.add_argument("-p","--profile", type=bool, default=False, help="Enable profiling", required=False)
+        parser.add_argument("-ch","--chunk_size", type=int, default=256, help="Chunk size for training", required=False)
+        parser.add_argument("-w","--weights", type=float, nargs="+", default=None, help="Class Weightings for Classification problems (number of values must be equal to number of classes)", required=False)
+        parser.add_argument("-sb","--save_best", type=bool, default=True, help="Save best model on exit", required=False)
+        parser.add_argument("-sl","--save_last", type=bool, default=False, help="Save last model on exit", required=False)
+        parser.add_argument("-ep","--end_patience", type=int, default=3, help="Early stopping patience in epochs (if no improvement in validation loss)", required=False)
+
+        try:
+            parser_args = parser.parse_args(shlex.split(extra_args))
+            feedback.pushInfo(f"Extra args: {parser_args}")
+        except argparse.ArgumentError as e:
+            feedback.reportError("Error parsing extra arguments: " + str(e))
+            return {self.OUTPUT_MODEL: None}  # Return None if parsing fails
+            
+
+        doProfiling = parser_args.profile
+
         args = {
-            "CHUNK_SIZE": 256,
+            "CHUNK_SIZE": parser_args.chunk_size,
             "NODATA": nodata,
-            "BATCH_SIZE": 16,
+            "BATCH_SIZE": parser_args.batch_size,
             "LEARNING_RATE": learning_rate,
             "EPOCHS": n_epochs,
             "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
             "TRAIN_TYPE": self.training_types[training_type], # classification or regression
-            "GENERATE_AUGMENTED": False,
             "NORMALIZE_INPUTS": normalize_inputs,
-            "NORMALIZE_TARGETS": True, # only for regression
+            "NORMALIZE_TARGETS": parser_args.normalize_targets, # only for regression
             "CLASS_REMAPPING": True,
-            "VALIDATION_SPLIT": 0.2
+            "VALIDATION_SPLIT": parser_args.validation_split,
+            "M_DEPTH": parser_args.depth,
+            "M_CHANNELS": parser_args.channels,
+            "CLASS_WEIGHTS": parser_args.weights, # CrossEntropyLoss class weightings (for classification only)
+            "SAVE_BEST": parser_args.save_best,  # Save best model on exit
+            "SAVE_LAST": parser_args.save_last, # Save last model on exit
+            "END_PATIENCE": parser_args.end_patience, # Early stopping patience in epochs (if no improvement in validation loss)
         }
 
         feedback.pushInfo(f"Args: {args}")
@@ -205,13 +239,12 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         if doProfiling:
             profiler = cProfile.Profile()
             profiler.enable()
-        # SETUP PROFILING
 
 
         # Setup Dataset
         dataset = QDataset(raster_pairs, context, feedback, args, checkpoint)
         trainer = QUNetTrainer(dataset,model_save_loc, feedback, args, checkpoint)
-        try:
+        try: # Start Training
             trainer.train()
         except Exception as e:
             feedback.reportError(str(e))
@@ -222,9 +255,6 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         # FINISH PROFILING
         if doProfiling:
             self.finish_profiling(profiler, feedback)
-            
-
-        # FINISH PROFILING
 
 
         return {self.OUTPUT_MODEL: model_save_loc}

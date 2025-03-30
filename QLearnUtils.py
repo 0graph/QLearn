@@ -169,11 +169,6 @@ class QUtils:
         
         return chunks
 
-    # Generates augmented raster images to enhance training (input only)
-    @staticmethod
-    def gen_augmentations(ras: QgsRasterLayer):
-        pass
-
 
     # Source: https://abagen.readthedocs.io/en/stable/user_guide/normalization.html
     # Soruce: https://github.com/rmarkello/abagen/blob/main/abagen/correct.py

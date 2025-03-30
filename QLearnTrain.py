@@ -29,6 +29,10 @@ class QUNetTrainer:
         self.batch_size = args["BATCH_SIZE"]
         self.val_split = args["VALIDATION_SPLIT"]                       # 0-1 ratio of data used for validation vs data used for training
         self.model_output_location = output_loc                         # Where to save model file
+        self.mbase_channels=args["M_CHANNELS"]                          # Base channels for UNet
+        self.mdepth=args["M_DEPTH"]                                     # Depth of UNet
+        self.class_weight=args["CLASS_WEIGHTS"]                         # Class weight for CrossEntropyLoss
+        self.mretain_dim=True
         self.feedback = feedback                                        # For processing algorithm
         self.NODATA_class_mapping = self.dataset.NODATA_class_mapping   
         self.checkpoint = checkpoint
@@ -66,7 +70,7 @@ class QUNetTrainer:
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau( 
             self.optimizer, mode='min', factor=0.1, patience=4,min_lr=1e-6)
         # CrossEntropyLosss if Classification, MSELoss otherwise
-        self.criterion = (nn.CrossEntropyLoss(ignore_index=self.NODATA_class_mapping) 
+        self.criterion = (nn.CrossEntropyLoss(weight=self.class_weight,ignore_index=self.NODATA_class_mapping) 
                 if self.task == "classification" else nn.MSELoss())
         self.feedback.pushInfo(f"ignore Index: {self.NODATA_class_mapping}")
 
@@ -80,10 +84,7 @@ class QUNetTrainer:
             self.mbase_channels = model_params["base_channels"]
             self.mdepth = model_params["depth"]
             self.mretain_dim = model_params["retain_dim"]
-        else:
-            self.mbase_channels=64
-            self.mdepth=4
-            self.mretain_dim=True
+            
 
         self.model: QUNet = QUNet(                                      # UNet Model Init
             in_channels=self.dataset.bands,                             # Number of bands in input image
