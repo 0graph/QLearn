@@ -34,7 +34,7 @@ class QDataLoader(Dataset):
 # Class for loading and preprocessing the dataset
 class QDataset():
     def __init__(self,
-                 raster_pairs: list[tuple[QgsRasterLayer, QgsRasterLayer]],
+                 raster_pairs: list,
                  context: QgsProcessingContext,
                  feedback: QgsProcessingFeedback,
                  args: dict,

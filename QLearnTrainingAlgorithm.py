@@ -192,9 +192,8 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         parser.add_argument("-p","--profile", type=bool, default=False, help="Enable profiling", required=False)
         parser.add_argument("-ch","--chunk_size", type=int, default=256, help="Chunk size for training", required=False)
         parser.add_argument("-w","--weights", type=float, nargs="+", default=None, help="Class Weightings for Classification problems (number of values must be equal to number of classes)", required=False)
-        parser.add_argument("-sb","--save_best", type=bool, default=True, help="Save best model on exit", required=False)
-        parser.add_argument("-sl","--save_last", type=bool, default=False, help="Save last model on exit", required=False)
-        parser.add_argument("-ep","--end_patience", type=int, default=3, help="Early stopping patience in epochs (if no improvement in validation loss)", required=False)
+        parser.add_argument("-sm","--save_mode", type=int, default=0, help="0=best, 1=last", required=False)
+        parser.add_argument("-ep","--end_patience", type=int, default=5, help="Early stopping patience in epochs (if no improvement in validation loss)", required=False)
 
         try:
             parser_args = parser.parse_args(shlex.split(extra_args))
@@ -221,8 +220,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             "M_DEPTH": parser_args.depth,
             "M_CHANNELS": parser_args.channels,
             "CLASS_WEIGHTS": parser_args.weights, # CrossEntropyLoss class weightings (for classification only)
-            "SAVE_BEST": parser_args.save_best,  # Save best model on exit
-            "SAVE_LAST": parser_args.save_last, # Save last model on exit
+            "SAVE_MODE": parser_args.save_mode,  # 0 = save best, 1 = save last
             "END_PATIENCE": parser_args.end_patience, # Early stopping patience in epochs (if no improvement in validation loss)
         }
 

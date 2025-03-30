@@ -33,6 +33,10 @@ class QUNetTrainer:
         self.mdepth=args["M_DEPTH"]                                     # Depth of UNet
         self.class_weight=args["CLASS_WEIGHTS"]                         # Class weight for CrossEntropyLoss
         self.mretain_dim=True
+        self.save_mode = args["SAVE_MODE"]                              # Save mode (0 = best model, 1 = last model)
+        self.best_loss = float("inf")                                   # Best model loss
+        self.end_patience = args["END_PATIENCE"]                        # Early stopping patience
+        self.epochs_no_improvement = 0                                  # Number of epochs with no improvement
         self.feedback = feedback                                        # For processing algorithm
         self.NODATA_class_mapping = self.dataset.NODATA_class_mapping   
         self.checkpoint = checkpoint
@@ -163,7 +167,7 @@ class QUNetTrainer:
             self.feedback.pushInfo(f"Test Accuracy: {metrics.accuracy:.2%}")
         self.feedback.pushInfo(f"Test Loss: {metrics.loss:.4f}")
         self.feedback.pushInfo("Model Evaluation Finished!")
-        self.feedback.pushInfo("--------------------------------------")
+        self.feedback.pushInfo("------------------------------------------")
 
 
     # Execute a single epoch of training
@@ -209,7 +213,6 @@ class QUNetTrainer:
         return metrics
     
     def criterion_loss(self, outputs: torch.tensor, targets: torch.tensor, inputs: torch.tensor) -> float:
-        # TODO: For regression -> mask NODATA values
 
         # mask NODATA values for regression -> MSELoss does not have ignore_index so it's very important to remove NODATA
         if self.task == "regression":
@@ -259,7 +262,9 @@ class QUNetTrainer:
         self.feedback.pushInfo(f"Training started with {len(self.train_dataset)} samples")
         
         for epoch in range(self.epochs):
-            
+            val_metrics = None
+            train_metrics = None
+
             # Catch interrupt raised by checkCancelled() and force stop training
             try:
                 # Preform training and validation for one epoch
@@ -270,13 +275,30 @@ class QUNetTrainer:
 
             self.log_progress(epoch,train_metrics,val_metrics)
             self.scheduler.step(val_metrics.loss)
+
+            # Check early stopping conditions
+            if val_metrics.loss < self.best_loss:
+                    self.best_loss = val_metrics.loss
+                    self.epochs_no_improvement = 0
+
+                    # Save the best model
+                    if self.save_mode == 0:
+                        self.feedback.pushInfo("Saving best model...")
+                        self.save_model()
+            else:
+                self.epochs_no_improvement += 1
+                if self.epochs_no_improvement >= self.end_patience:
+                    self.feedback.pushInfo(f"Early stopping at epoch {epoch+1}...")
+                    break
             
 
         self.feedback.pushInfo("Training Finished!")
 
         self.evaluate_model() # Evaluate the model on the test set (if available)
 
-        self.save_model()
+        # Save the last model if specified
+        if self.save_mode == 1:
+            self.save_model()
         self.dataset.clear_temp_dir()
 
     # report progress, accuracy, and loss
@@ -293,7 +315,6 @@ class QUNetTrainer:
     def checkCancel(self) -> bool:
         if self.feedback.isCanceled():
             self.feedback.pushInfo("Training Cancelled...")
-            self.save_model()
             raise KeyboardInterrupt # Raise interrupt so we can catch in outer loop
         return False
 
@@ -327,7 +348,7 @@ class QUNetTrainer:
 
     # Note: track loss and save best model
     # Note: preform training, validation, and testing 
-    def save_model(self):
+    def save_model(self) -> None:
         # TODO: refactor into a dataclass with methods for properly loading and saving
         self.feedback.pushInfo(f"Saving model to {self.model_output_location}")
         checkpoint = {
