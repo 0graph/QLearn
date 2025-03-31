@@ -1,29 +1,50 @@
 
-import torch
+import torch, os, json
 from torch.utils.data import Dataset
 import numpy as np
 import numpy.ma as ma
-from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsRasterDataProvider, QgsRectangle, QgsRasterBlock, Qgis
+from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsRectangle, QgsRasterBlock, Qgis
 from .QLearnUtils import QUtils, NormalizationParams
 
 from .QRasterNumpy import *
 
 
-# Class format used by pytorch dataloader
-class QDataset(Dataset):
+# class used by PyTorch DataLoader
+class QDataLoader(Dataset):
+    def __init__(self, chunk_indicies: list, temp_dir: str):
+        self.chunk_indices = chunk_indicies
+        self.temp_dir = temp_dir
+
+    # load the preprocessed data from a file
+    def load_preprocessed_data(self, i: int, chX: int, chY: int, is_target: bool) -> torch.tensor:
+        return torch.load(os.path.join(self.temp_dir, QDataset.make_filename(i, chX, chY, is_target)))
+
+    def __len__(self):
+        return len(self.chunk_indices)
+    
+    def __getitem__(self, idx):
+        # Get Chunks
+        raster_idx, chX, chY = self.chunk_indices[idx]
+        train_data = self.load_preprocessed_data(raster_idx, chX, chY, False)
+        target_data = self.load_preprocessed_data(raster_idx, chX, chY, True)
+
+        return train_data, target_data
+
+
+# Class for loading and preprocessing the dataset
+class QDataset():
     def __init__(self,
-                 training_rasters: list[QgsRasterLayer],
-                 target_rasters: list[QgsRasterLayer],
+                 raster_pairs: list,
                  context: QgsProcessingContext,
                  feedback: QgsProcessingFeedback,
                  args: dict,
                  checkpoint: dict):
         
-        self.training_rasters = training_rasters
-        self.target_rasters = target_rasters
+        self.raster_pairs = json.loads(raster_pairs) # data is in json string format "[[r1,r2],[r3,r4],...]"
         self.context = context
         self.feedback = feedback
-        self.chunk_indices = []                                     # Indices of each chunk for each raster in aligned_rasters
+        self.chunk_indices = []                                     # Indices of each chunk for each raster for training rasters
+        self.test_chunk_indices = []                                # Indices of each chunk for each raster for testing rasters
         self.aligned_rasters = []                                   # The list of aligned raster filenames
         self.chunkSize = args["CHUNK_SIZE"]                         # Split Images into Chunks of this size
         self.NODATA = args["NODATA"]                                # NoData Value for rasters
@@ -35,28 +56,33 @@ class QDataset(Dataset):
         self.norm_params_target: list[NormalizationParams] = None   # mean and scale values for normalization of target data
         self.checkpoint = checkpoint                                # checkpoint dictionary
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
+        
+        # Note: could save numpy arrays to file after preprocessing and class mapping to be used by dataloader
                                                                     # Or filling the ndarray with values that pytorch ignores to preserve the maximum amount of data
         self.do_class_mapping = args["CLASS_REMAPPING"]             # Weather to preform automatic class remapping
-        self.class_mapping = {}                                     # the class mapping dictionary { new_class : old_class }
+        self.class_mapping = {}                                     # the class mapping dictionary { new_class : old_class } # note: could be a list
         self.inv_class_mapping = {}                                 # Used for rempapping tensors { old_class : new_class }
         self.NODATA_class_mapping = -100                            # used to set CrossEntropyLoss ignore index
+        self.temp_dir = None                                        # temporary directory to store preprocessed data
 
-
+        self.make_temp_dir()                                        # create a temporary directory to store the preprocessed data
         self.normalize_targets = self.normalize_targets and self.task == "regression" # only normalize targets for regression
 
         # will overwrite the passed in params
         self.load_checkpoint_data() # load checkpoint data if it exists
 
-        assert len(training_rasters) == len(target_rasters), "Length of Input Rasters and Target Rasters does not match"
         
         # Align each pair of rasters and save it to a temporary file if valid
         # additionally calculate the total chunks and normalization values
-        for i,(train_ras, targ_ras) in enumerate(zip(training_rasters, target_rasters)):
+        for i,(train_src, targ_src, isTesting) in enumerate(self.raster_pairs):
+            train_ras = QgsRasterLayer(train_src)
+            targ_ras = QgsRasterLayer(targ_src)
+
             self.feedback.pushInfo(f"Raster Set {i}: [Training: {train_ras.name()},Target: {targ_ras.name()}] Bands: {train_ras.bandCount()}")
 
-            success, train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, i, self.feedback, self.context)
+            train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, i, self.feedback, self.context)
 
-            assert success, f"Error: Could not align rasters {train_ras.name(),targ_ras.name()}"
+            assert train_ras_align is not None and targ_ras_align is not None, f"Error: Could not align rasters {train_ras.name(),targ_ras.name()}"
             assert targ_ras.bandCount() == 1, f"Error: Target Raster has more than 1 band {targ_ras.name()}"
 
             self.bands = min(self.bands, train_ras.bandCount()) # Set band count to lowest of any raster in list
@@ -65,7 +91,12 @@ class QDataset(Dataset):
             train_ras = QgsRasterLayer(train_ras_align)
             targ_ras = QgsRasterLayer(targ_ras_align)
             chX, chY = QUtils.calculate_chunks(train_ras, self.chunkSize)
-            self.chunk_indices.extend([(i, x, y) for x in range(chX) for y in range(chY)])
+
+            # add the chunk indices to the list
+            if isTesting:
+                self.test_chunk_indices.extend([(i, x, y) for x in range(chX) for y in range(chY)])
+            else:
+                self.chunk_indices.extend([(i, x, y) for x in range(chX) for y in range(chY)])
 
             # Add Class mappings from aligned rasters
             if self.task == "classification" and self.do_class_mapping:
@@ -79,10 +110,79 @@ class QDataset(Dataset):
         # then it wont have to shift them for the output
         self.add_NODATA_class_mapping()
 
+        self.preprocess_and_save() # preprocess and save the data to a file
+
+        # Create PyTorch Dataset to be used by DataLoader
+        self.PyTorchDataset = QDataLoader(self.chunk_indices, self.temp_dir)
+        
+        if len(self.test_chunk_indices) > 0:
+            # Create PyTorch Dataset for testing data
+             self.TestPyTorchDataset = QDataLoader(self.test_chunk_indices, self.temp_dir)
+
+        self.feedback.pushInfo(f"Created training dataset with {len(self.chunk_indices)} chunks")
+        self.feedback.pushInfo(f"Created testing dataset with {len(self.test_chunk_indices)} chunks")
+
         assert len(self.chunk_indices) > 0, "Error: No Chunks Found"
         assert len(self.aligned_rasters) > 0, "Error: No Aligned Rasters Found"
         assert self.bands > 0, "Error: No Bands Found"
         assert len(self.norm_params_train) == self.bands, "Error: Normalization Parameters for Training Data not initialized properly"
+
+    # make a temporary directory in the plugin folder to store the preprocessed data
+    def make_temp_dir(self) -> str:
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        # create a temporary directory to store the preprocessed data
+        self.temp_dir = os.path.join(dir_path, "temp")
+        self.clear_temp_dir()
+        if not os.path.exists(self.temp_dir):
+            os.makedirs(self.temp_dir)
+
+        self.feedback.pushInfo(f"Created Temporary Directory: {self.temp_dir}")
+        return self.temp_dir
+
+    # clear the temporary directory
+    def clear_temp_dir(self):
+        if os.path.exists(self.temp_dir):
+            for file in os.listdir(self.temp_dir):
+                os.remove(os.path.join(self.temp_dir, file))
+
+    # preprocess each file in the dataset and save the numpy array to a file
+    # this saves time and repeted computation during the training loop
+    def preprocess_and_save(self):
+        all_chunks = self.chunk_indices + self.test_chunk_indices
+
+        for i, chX, chY in all_chunks:
+            # Get Chunks
+            train_filename, target_filename = self.aligned_rasters[i]
+            # Get Chunk Data
+            training_chunk = self.read_chunk(train_filename, chX, chY)
+            target_chunk = self.read_chunk(target_filename, chX, chY)
+            # Create Tensors
+            training_tensor = torch.tensor(training_chunk, dtype=torch.float32)
+            target_tensor = torch.tensor(target_chunk, dtype=torch.float32)
+
+            # Normalize training data
+            if self.normalize_inputs:
+                training_tensor = QUtils.normalize(training_tensor, self.NODATA, self.norm_params_train, self.feedback)
+
+            if self.task == "regression": # need to normalize regression targets for now to prevent exploding gradients
+                target_tensor = QUtils.normalize(target_tensor, self.NODATA, self.norm_params_target, self.feedback)
+            else: # convert to long tensor before class remapping
+                target_tensor = torch.round(target_tensor).long()
+
+            target_tensor = self.remap_classes(target_tensor)
+            
+            # Save the preprocessed data to a file
+            self.save_preprocessed_data(i, chX, chY, False, training_tensor)
+            self.save_preprocessed_data(i, chX, chY, True, target_tensor)
+    
+    # consistent filename format for saving / loading preprocessed data
+    @staticmethod
+    def make_filename(i: int, chX: int, chY: int, is_target: bool) -> str:
+        return f"{i}_{chX}_{chY}_{'target' if is_target else 'train'}.pt"
+
+    # save the preprocessed data to a file
+    def save_preprocessed_data(self, i: int, chX: int, chY: int, is_target: bool, data: torch.tensor):
+        torch.save(data, os.path.join(self.temp_dir, self.make_filename(i, chX, chY, is_target)))
 
     # preloads the checkpoint data for retraining before processing the dataset
     def load_checkpoint_data(self):
@@ -139,10 +239,6 @@ class QDataset(Dataset):
             data = targ_ras.as_numpy(use_masking=True)
 
             self.norm_params_target[0].update_from_array(data)
-
-        self.feedback.pushInfo(f"Training Normalization Params: {self.norm_params_train}")
-        self.feedback.pushInfo(f"Target Normalization Params: {self.norm_params_target}")
-                
         
 
     def add_NODATA_class_mapping(self):
@@ -162,34 +258,6 @@ class QDataset(Dataset):
         # Debugging statements
         # self.feedback.pushInfo(f"Finalized Class Mapping: {self.class_mapping}")  
         # self.feedback.pushInfo(f"Finalized Inverse Class Mapping: {self.inv_class_mapping}")
-
-
-    def __len__(self):
-        return len(self.chunk_indices)
-
-    def __getitem__(self, idx):
-        # Get Chunks
-        raster_idx, chX, chY = self.chunk_indices[idx]
-        train_filename, target_filename = self.aligned_rasters[raster_idx]
-        # Get Chunk Data
-        training_chunk = self.read_chunk(train_filename, chX, chY)
-        target_chunk = self.read_chunk(target_filename, chX, chY)
-        # Create Tensors
-        training_tensor = torch.tensor(training_chunk, dtype=torch.float32)
-        target_tensor = torch.tensor(target_chunk, dtype=torch.float32)
-
-        # Normalize training data
-        if self.normalize_inputs:
-            training_tensor = QUtils.normalize(training_tensor, self.NODATA, self.norm_params_train, self.feedback)
-
-        if self.task == "regression": # need to normalize regression targets for now to prevent exploding gradients
-            target_tensor = QUtils.normalize(target_tensor, self.NODATA, self.norm_params_target, self.feedback)
-        else: # convert to long tensor before class remapping
-            target_tensor = torch.round(target_tensor).long()
-        
-
-        # Return training data and remapped target data
-        return training_tensor, self.remap_classes(target_tensor)
     
     # preform class remapping based on dictionary (target raster)
     def remap_classes(self, tensor : torch.tensor) -> torch.tensor:

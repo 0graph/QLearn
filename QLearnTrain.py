@@ -1,7 +1,10 @@
+# Note: add option to specifiy seperate testing set
+# models where testing and training data are from the same set can be overfit and not generalize well
+
 import torch
 from torch.utils.data import DataLoader, random_split
 from .QLearnUNet import QUNet
-from .QLearnDataset import QDataset
+from .QLearnDataset import QDataset, QDataLoader
 import torch.optim as optim
 import torch.nn as nn
 from qgis.core import QgsProcessingFeedback
@@ -26,6 +29,14 @@ class QUNetTrainer:
         self.batch_size = args["BATCH_SIZE"]
         self.val_split = args["VALIDATION_SPLIT"]                       # 0-1 ratio of data used for validation vs data used for training
         self.model_output_location = output_loc                         # Where to save model file
+        self.mbase_channels=args["M_CHANNELS"]                          # Base channels for UNet
+        self.mdepth=args["M_DEPTH"]                                     # Depth of UNet
+        self.class_weight=args["CLASS_WEIGHTS"]                         # Class weight for CrossEntropyLoss
+        self.mretain_dim=True
+        self.save_mode = args["SAVE_MODE"]                              # Save mode (0 = best model, 1 = last model)
+        self.best_loss = float("inf")                                   # Best model loss
+        self.end_patience = args["END_PATIENCE"]                        # Early stopping patience
+        self.epochs_no_improvement = 0                                  # Number of epochs with no improvement
         self.feedback = feedback                                        # For processing algorithm
         self.NODATA_class_mapping = self.dataset.NODATA_class_mapping   
         self.checkpoint = checkpoint
@@ -36,7 +47,7 @@ class QUNetTrainer:
                                                                         
         # Setup PyTorch Training Objects
         self.setup_model()
-        self.setup_dataloaders(self.dataset)
+        self.setup_dataloaders(self.dataset.PyTorchDataset)
         self.setup_OSL()
 
         self.load_checkpoint_data()
@@ -63,7 +74,7 @@ class QUNetTrainer:
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau( 
             self.optimizer, mode='min', factor=0.1, patience=4,min_lr=1e-6)
         # CrossEntropyLosss if Classification, MSELoss otherwise
-        self.criterion = (nn.CrossEntropyLoss(ignore_index=self.NODATA_class_mapping) 
+        self.criterion = (nn.CrossEntropyLoss(weight=self.class_weight,ignore_index=self.NODATA_class_mapping) 
                 if self.task == "classification" else nn.MSELoss())
         self.feedback.pushInfo(f"ignore Index: {self.NODATA_class_mapping}")
 
@@ -77,10 +88,7 @@ class QUNetTrainer:
             self.mbase_channels = model_params["base_channels"]
             self.mdepth = model_params["depth"]
             self.mretain_dim = model_params["retain_dim"]
-        else:
-            self.mbase_channels=64
-            self.mdepth=4
-            self.mretain_dim=True
+            
 
         self.model: QUNet = QUNet(                                      # UNet Model Init
             in_channels=self.dataset.bands,                             # Number of bands in input image
@@ -92,7 +100,7 @@ class QUNetTrainer:
         ).to(self.device)                                               # Set device to be used for processing
 
     # Configure the dataloaders for training and validation based on the validation split
-    def setup_dataloaders(self, dataset: QDataset) -> None:
+    def setup_dataloaders(self, dataset: QDataLoader) -> None:
 
         # Calculate training & validation dataset split
         val_size = int(self.val_split * len(dataset))
@@ -117,6 +125,50 @@ class QUNetTrainer:
 
         assert len(self.train_dataset) > 0, "Training dataset is empty"
         assert len(self.val_dataset) > 0, "Validation dataset is empty"
+
+    def evaluate_model(self):
+        if not hasattr(self.dataset, "TestPyTorchDataset"):
+            self.feedback.pushInfo("No test dataset found")
+            return
+        
+        self.feedback.pushInfo("Evaluating Model...")
+        # Set up test data loader
+        test_dl = DataLoader(self.dataset.TestPyTorchDataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+
+        self.model.eval()
+        total_loss = 0.0
+        total_correct = 0
+        total_valid = 0
+
+        with torch.no_grad():
+            for images, targets in test_dl:
+                # training was cancelled -> exit
+                if self.checkCancel():
+                    return
+                
+                images, targets = images.to(self.device), targets.to(self.device)
+                targets = self.prepare_targets(targets)
+                
+                # Calculate loss
+                outputs = self.model(images)
+                loss = self.criterion_loss(outputs, targets, images)
+                total_loss += loss.item()
+                if self.task == "classification":
+                    correct, valid = self.calculate_pred_accuracy(outputs, targets)
+                    total_correct += correct
+                    total_valid += valid
+
+        # Finalize the accuracy calculations
+        metrics = TrainingMetrics(loss=total_loss / len(test_dl))
+        
+        self.feedback.pushInfo("---------- Model Evaluation ----------")
+        if self.task == "classification":
+            metrics.accuracy = total_correct / total_valid if total_valid > 0 else 0.0
+            self.feedback.pushInfo(f"Test Accuracy: {metrics.accuracy:.2%}")
+        self.feedback.pushInfo(f"Test Loss: {metrics.loss:.4f}")
+        self.feedback.pushInfo("Model Evaluation Finished!")
+        self.feedback.pushInfo("------------------------------------------")
+
 
     # Execute a single epoch of training
     def train_epoch(self) -> TrainingMetrics:
@@ -161,7 +213,6 @@ class QUNetTrainer:
         return metrics
     
     def criterion_loss(self, outputs: torch.tensor, targets: torch.tensor, inputs: torch.tensor) -> float:
-        # TODO: For regression -> mask NODATA values
 
         # mask NODATA values for regression -> MSELoss does not have ignore_index so it's very important to remove NODATA
         if self.task == "regression":
@@ -211,7 +262,9 @@ class QUNetTrainer:
         self.feedback.pushInfo(f"Training started with {len(self.train_dataset)} samples")
         
         for epoch in range(self.epochs):
-            
+            val_metrics = None
+            train_metrics = None
+
             # Catch interrupt raised by checkCancelled() and force stop training
             try:
                 # Preform training and validation for one epoch
@@ -222,10 +275,31 @@ class QUNetTrainer:
 
             self.log_progress(epoch,train_metrics,val_metrics)
             self.scheduler.step(val_metrics.loss)
+
+            # Check early stopping conditions
+            if val_metrics.loss < self.best_loss:
+                    self.best_loss = val_metrics.loss
+                    self.epochs_no_improvement = 0
+
+                    # Save the best model
+                    if self.save_mode == 0:
+                        self.feedback.pushInfo("Saving best model...")
+                        self.save_model()
+            else:
+                self.epochs_no_improvement += 1
+                if self.epochs_no_improvement >= self.end_patience:
+                    self.feedback.pushInfo(f"Early stopping at epoch {epoch+1}...")
+                    break
             
 
         self.feedback.pushInfo("Training Finished!")
-        self.save_model()
+
+        self.evaluate_model() # Evaluate the model on the test set (if available)
+
+        # Save the last model if specified
+        if self.save_mode == 1:
+            self.save_model()
+        self.dataset.clear_temp_dir()
 
     # report progress, accuracy, and loss
     def log_progress(self, epoch: int, train_metrics: TrainingMetrics, val_metrics: TrainingMetrics):
@@ -241,7 +315,6 @@ class QUNetTrainer:
     def checkCancel(self) -> bool:
         if self.feedback.isCanceled():
             self.feedback.pushInfo("Training Cancelled...")
-            self.save_model()
             raise KeyboardInterrupt # Raise interrupt so we can catch in outer loop
         return False
 
@@ -269,11 +342,15 @@ class QUNetTrainer:
             return 0, 0
         
         preds = outputs.argmax(dim=1)
+        # issue with calculating prediction accuracy -> probaby because preds have NODATA values in them
         correct = (preds[mask] == targets[mask]).sum().item()
         return correct, valid_pixels
 
-    def save_model(self):
+    # Note: track loss and save best model
+    # Note: preform training, validation, and testing 
+    def save_model(self) -> None:
         # TODO: refactor into a dataclass with methods for properly loading and saving
+        self.feedback.pushInfo(f"Saving model to {self.model_output_location}")
         checkpoint = {
             "model_params": {
                 "in_channels": self.dataset.bands,
