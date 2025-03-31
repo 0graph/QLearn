@@ -55,6 +55,7 @@ class QDataset():
         self.norm_params_train: list[NormalizationParams] = None    # mean and scale values for normalization of training data
         self.norm_params_target: list[NormalizationParams] = None   # mean and scale values for normalization of target data
         self.checkpoint = checkpoint                                # checkpoint dictionary
+        self.open_rasters = {}                                      # dict of opened rasters
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
         
         # Note: could save numpy arrays to file after preprocessing and class mapping to be used by dataloader
@@ -75,21 +76,21 @@ class QDataset():
         # Align each pair of rasters and save it to a temporary file if valid
         # additionally calculate the total chunks and normalization values
         for i,(train_src, targ_src, isTesting) in enumerate(self.raster_pairs):
-            train_ras = QgsRasterLayer(train_src)
-            targ_ras = QgsRasterLayer(targ_src)
+            train_ras = self.get_raster(train_src)
+            targ_ras = self.get_raster(targ_src)
 
-            self.feedback.pushInfo(f"Raster Set {i}: [Training: {train_ras.name()},Target: {targ_ras.name()}] Bands: {train_ras.bandCount()}")
+            self.feedback.pushInfo(f"Raster Set {i}: [Training: {train_ras.source()},Target: {targ_ras.source()}] Bands: {train_ras.bandCount()}")
 
             train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, i, self.feedback, self.context)
 
-            assert train_ras_align is not None and targ_ras_align is not None, f"Error: Could not align rasters {train_ras.name(),targ_ras.name()}"
-            assert targ_ras.bandCount() == 1, f"Error: Target Raster has more than 1 band {targ_ras.name()}"
+            assert train_ras_align is not None and targ_ras_align is not None, f"Error: Could not align rasters {train_ras.source(),targ_ras.source()}"
+            assert targ_ras.bandCount() == 1, f"Error: Target Raster has more than 1 band {targ_ras.source()}"
 
             self.bands = min(self.bands, train_ras.bandCount()) # Set band count to lowest of any raster in list
             self.aligned_rasters.append((train_ras_align, targ_ras_align))
 
-            train_ras = QgsRasterLayer(train_ras_align)
-            targ_ras = QgsRasterLayer(targ_ras_align)
+            train_ras = self.get_raster(train_ras_align)
+            targ_ras = self.get_raster(targ_ras_align)
             chX, chY = QUtils.calculate_chunks(train_ras, self.chunkSize)
 
             # add the chunk indices to the list
@@ -126,6 +127,17 @@ class QDataset():
         assert len(self.aligned_rasters) > 0, "Error: No Aligned Rasters Found"
         assert self.bands > 0, "Error: No Bands Found"
         assert len(self.norm_params_train) == self.bands, "Error: Normalization Parameters for Training Data not initialized properly"
+
+    # get the raster layer for a given filename (prevents opening the same raster multiple times)
+    def get_raster(self, filename):
+        # If we've already opened this raster, return the existing layer
+        if filename in self.open_rasters:
+            return self.open_rasters[filename]
+            
+        # Otherwise, create a new layer and store it
+        raster = QgsRasterLayer(filename)
+        self.open_rasters[filename] = raster
+        return raster
 
     # make a temporary directory in the plugin folder to store the preprocessed data
     def make_temp_dir(self) -> str:
@@ -226,8 +238,8 @@ class QDataset():
             assert self.norm_params_train is not None and self.norm_params_target is not None, "Normalization parameters must be initialized if loading from checkpoint"
         
         for train_ras, targ_ras in self.aligned_rasters:
-            train_ras = QgsRasterLayer(train_ras)
-            targ_ras = QgsRasterLayer(targ_ras)
+            train_ras = self.get_raster(train_ras)
+            targ_ras = self.get_raster(targ_ras)
 
             # Calculate normalization parameters for training data
             data = train_ras.as_numpy(use_masking=True)
@@ -333,7 +345,7 @@ class QDataset():
         return m_block
 
     def read_chunk(self, ras_filename: str, chX: int, chY: int) -> np.ndarray:
-        raster = QgsRasterLayer(ras_filename) # Fails on multithread
+        raster = self.get_raster(ras_filename) # Fails on multithread
         raster_band_count = min(self.bands,raster.bandCount())
 
         

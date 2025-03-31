@@ -118,27 +118,33 @@ class RasterPairWidgetWrapper(QgsAbstractProcessingParameterWidgetWrapper):
 
     def setWidgetValue(self, value, context):
         self.table.setRowCount(0)
-        if value:
-            try:
-                pairs = json.loads(value)
-                for pair in pairs:
-                    row = self.table.rowCount()
-                    self.table.insertRow(row)
-                    self.create_combo_widget(row, 0)
-                    self.create_combo_widget(row, 1)
-                    self.create_checkbox_widget(row)
+        if not value:
+            return
+        
+        try:
+            pairs = json.loads(value)
+            for pair in pairs:
+                row = self.table.rowCount()
+                self.table.insertRow(row)
+                self.create_combo_widget(row, 0)
+                self.create_combo_widget(row, 1)
+                self.create_checkbox_widget(row)
 
-                    if len(pair) >= 3:
-                        training, target, validation = pair[:3]
-                    else:
-                        training, target = pair[:2]
-                        validation = False
+                if len(pair) >= 3:
+                    training, target, validation = pair[:3]
+                else:
+                    training, target = pair[:2]
+                    validation = False
 
-                    self.set_combo_value(row, 0, training)
-                    self.set_combo_value(row, 1, target)
-                    self.table.cellWidget(row, 2).setChecked(validation)
-            except json.JSONDecodeError:
-                pass
+                self.set_combo_value(row, 0, training)
+                self.set_combo_value(row, 1, target)
+                # Fix: Access the checkbox within the widget container
+                checkbox_widget = self.table.cellWidget(row, 2)
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox:
+                    checkbox.setChecked(validation)
+        except json.JSONDecodeError:
+            pass
 
     def set_combo_value(self, row, col, value):
         cell_widget = self.table.cellWidget(row, col)
