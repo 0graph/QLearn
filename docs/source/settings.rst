@@ -1,5 +1,8 @@
+Settings & Features
+===================
+
 Basic Training Parameters
-^^^^^^^^^^^^^^^^^^^^^^^^^
+-------------------------
 
 .. list-table::
    :widths: 20 50 10 20
@@ -35,7 +38,7 @@ Basic Training Parameters
      - File
 
 Model Architecture Parameters
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+-----------------------------
 
 .. list-table::
    :widths: 20 50 10 20
@@ -55,7 +58,7 @@ Model Architecture Parameters
      - --channels, -c
 
 Data Processing Parameters
-^^^^^^^^^^^^^^^^^^^^^^^^^^
+--------------------------
 
 .. list-table::
    :widths: 20 50 10 20
@@ -87,7 +90,7 @@ Data Processing Parameters
      - --rescale, -r
 
 Training Process Parameters
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+---------------------------
 
 .. list-table::
    :widths: 20 50 15 15
@@ -120,7 +123,7 @@ Training Process Parameters
   
 
 Advanced Options
-^^^^^^^^^^^^^^^^
+----------------
 
 .. list-table::
    :widths: 20 50 15 15
