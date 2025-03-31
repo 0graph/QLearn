@@ -54,6 +54,7 @@ class QDataset():
         self.normalize_targets = args["NORMALIZE_TARGETS"]          # weather to normalize the target values in _getitem_
         self.norm_params_train: list[NormalizationParams] = None    # mean and scale values for normalization of training data
         self.norm_params_target: list[NormalizationParams] = None   # mean and scale values for normalization of target data
+        self.rescale = args["RESCALE"]                              # Rescale the raster's cellsize by cellsize*(1/rescale)
         self.checkpoint = checkpoint                                # checkpoint dictionary
         self.open_rasters = {}                                      # dict of opened rasters
                                                                     # Eventually using a reduction method for larger rasters like PCA would be ideal
@@ -81,7 +82,7 @@ class QDataset():
 
             self.feedback.pushInfo(f"Raster Set {i}: [Training: {train_ras.source()},Target: {targ_ras.source()}] Bands: {train_ras.bandCount()}")
 
-            train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, i, self.feedback, self.context)
+            train_ras_align, targ_ras_align = QUtils.alignRasters(train_ras, targ_ras, i, self.feedback, self.context,self.rescale)
 
             assert train_ras_align is not None and targ_ras_align is not None, f"Error: Could not align rasters {train_ras.source(),targ_ras.source()}"
             assert targ_ras.bandCount() == 1, f"Error: Target Raster has more than 1 band {targ_ras.source()}"
@@ -122,6 +123,8 @@ class QDataset():
 
         self.feedback.pushInfo(f"Created training dataset with {len(self.chunk_indices)} chunks")
         self.feedback.pushInfo(f"Created testing dataset with {len(self.test_chunk_indices)} chunks")
+
+        self.open_rasters.clear() # clear the opened rasters to free up memory
 
         assert len(self.chunk_indices) > 0, "Error: No Chunks Found"
         assert len(self.aligned_rasters) > 0, "Error: No Aligned Rasters Found"

@@ -3,7 +3,7 @@
 QLearn - Neural Network Training for QGIS
 =========================================
 
-.. image:: _static/icon.png
+.. image:: _static/logo.png
    :width: 128px
    :align: right
 
@@ -19,6 +19,14 @@ Key Features
 * Visualize results within QGIS
 
 The plugin integrates with QGIS's Processing Framework, allowing you to easily incorporate machine learning into your geospatial workflows.
+
+Requirements
+------------
+
+* QGIS 3.26+ (earlier versions are untested but may work)
+* torch and torchvision Python packages
+* OsGeo4w (Reccomended)
+* Windows 10+ (Linux and MacOS are untested but may work)
 
 .. toctree::
    :maxdepth: 2

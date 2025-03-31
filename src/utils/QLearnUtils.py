@@ -1,6 +1,7 @@
 from qgis.core import QgsRasterLayer, QgsProcessingFeedback, QgsProcessingUtils, QgsProcessingContext, Qgis, QgsRasterFileWriter
 from qgis.analysis import QgsAlignRaster
-from qgis import processing
+from qgis import processing 
+from qgis.PyQt.QtCore import QSizeF
 import torch
 import numpy as np
 
@@ -95,8 +96,15 @@ class QUtils:
     @staticmethod
     def alignRasters(
             training_raster: QgsRasterLayer, 
-            target_raster: QgsRasterLayer, index: int, feedback: QgsProcessingFeedback, context: QgsProcessingContext) -> tuple[bool,str,str]:
+            target_raster: QgsRasterLayer, index: int, feedback: QgsProcessingFeedback, context: QgsProcessingContext, scale: int = 1.0) -> tuple[str,str]:
         
+        assert scale > 0 and scale <= 1, "Scale must be between 0 and 1"
+
+        # Calculate CellSize Scaling
+        current_cell_size = (training_raster.rasterUnitsPerPixelX(), training_raster.rasterUnitsPerPixelY())
+        target_cell_size = (current_cell_size[0] * (1/scale), current_cell_size[1] * (1/scale))
+        feedback.pushInfo(f"Current Cell Size: {current_cell_size}, Target Cell Size: {target_cell_size}")
+
         training_aligned_filename = QgsProcessingUtils.generateTempFilename(f"training_aligned_{index}.tif")
         target_aligned_filename = QgsProcessingUtils.generateTempFilename(f"target_aligned_{index}.tif")
 
@@ -109,12 +117,14 @@ class QUtils:
         alignRaster.setRasters(rasters_to_align)
 
         # Set Raster to Align to
-        alignRaster.setParametersFromRaster(QgsAlignRaster.RasterInfo(training_raster.source()))
+        alignRaster.setParametersFromRaster(rasterInfo=QgsAlignRaster.RasterInfo(training_raster.source()),customCellSize=QSizeF(target_cell_size[0], target_cell_size[1]))
 
         success = alignRaster.checkInputParameters()
         if(not success):
             feedback.pushInfo(f"AlignRaster - InputParameterError: {alignRaster.errorMessage()}")
             return None, None
+        
+        # Scale the rasters down
         
         # Run Alignment
         success = alignRaster.run()

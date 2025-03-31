@@ -194,6 +194,7 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
         parser.add_argument("-w","--weights", type=float, nargs="+", default=None, help="Class Weightings for Classification problems (number of values must be equal to number of classes)", required=False)
         parser.add_argument("-sm","--save_mode", type=int, default=0, help="0=best, 1=last", required=False)
         parser.add_argument("-ep","--end_patience", type=int, default=5, help="Early stopping patience in epochs (if no improvement in validation loss)", required=False)
+        parser.add_argument("-r","--rescale", type=float, default=1.0, help="Downscale images by n (e.g. 0.6x)", required=False)
 
         try:
             parser_args = parser.parse_args(shlex.split(extra_args))
@@ -219,9 +220,10 @@ class QLearnTrainingAlgorithm(QgsProcessingAlgorithm):
             "VALIDATION_SPLIT": parser_args.validation_split,
             "M_DEPTH": parser_args.depth,
             "M_CHANNELS": parser_args.channels,
-            "CLASS_WEIGHTS": parser_args.weights, # CrossEntropyLoss class weightings (for classification only)
-            "SAVE_MODE": parser_args.save_mode,  # 0 = save best, 1 = save last
-            "END_PATIENCE": parser_args.end_patience, # Early stopping patience in epochs (if no improvement in validation loss)
+            "CLASS_WEIGHTS": parser_args.weights,           # CrossEntropyLoss class weightings (for classification only)
+            "SAVE_MODE": parser_args.save_mode,             # 0 = save best, 1 = save last
+            "END_PATIENCE": parser_args.end_patience,       # Early stopping patience in epochs (if no improvement in validation loss)
+            "RESCALE": parser_args.rescale,                 # Scale the input and target images to a smaller size before training
         }
 
         feedback.pushInfo(f"Args: {args}")

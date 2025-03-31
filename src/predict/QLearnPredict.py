@@ -55,7 +55,7 @@ class QNNPredictor:
         out_raster_data = np.ndarray(shape=(width,height),dtype=raster_data.dtype)
         out_raster_data.fill(self.NODATA) # Fill with NODATA in case 
 
-        self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{chunks}] DataType[{raster_data.dtype.__str__()}] Dimensions[{width},{height}]")
+        self.feedback.pushInfo(f"InRaster: {in_raster.name()} # Chunks [{len(chunks)}] DataType[{raster_data.dtype.__str__()}] Dimensions[{width},{height}]")
     
         self.model.eval()  # Ensure model is in evaluation mode
         for chunk_i in range(len(chunks)):
