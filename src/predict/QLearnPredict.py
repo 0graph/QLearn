@@ -1,7 +1,7 @@
 import torch
 from qgis.core import QgsProcessingFeedback, QgsRasterLayer, QgsProcessingContext, QgsRectangle, QgsRasterBlock, Qgis, QgsRasterDataProvider, QgsDataSourceUri, QgsError
-from .QLearnUtils import QUtils
-from .QLearnUNet import *
+from ..utils.QLearnUtils import QUtils
+from ..model.QLearnUNet import *
 import numpy as np
 
 class QNNPredictor:

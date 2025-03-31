@@ -3,7 +3,7 @@
 
 import torch
 from torch.utils.data import DataLoader, random_split
-from .QLearnUNet import QUNet
+from ..model.QLearnUNet import QUNet
 from .QLearnDataset import QDataset, QDataLoader
 import torch.optim as optim
 import torch.nn as nn

@@ -31,8 +31,8 @@ __copyright__ = '(C) 2025 by Adam Bialecki'
 __revision__ = '$Format:%H$'
 
 from qgis.core import QgsProcessingProvider
-from .QLearnTrainingAlgorithm import QLearnTrainingAlgorithm
-from .QLearnPredictionAlgorithm import QLearnPredictionAlgorithm
+from .train.QLearnTrainingAlgorithm import QLearnTrainingAlgorithm
+from .predict.QLearnPredictionAlgorithm import QLearnPredictionAlgorithm
 
 
 class QLearnProvider(QgsProcessingProvider):

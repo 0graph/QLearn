@@ -4,9 +4,9 @@ from torch.utils.data import Dataset
 import numpy as np
 import numpy.ma as ma
 from qgis.core import QgsRasterLayer, QgsProcessingContext, QgsProcessingFeedback, QgsRectangle, QgsRasterBlock, Qgis
-from .QLearnUtils import QUtils, NormalizationParams
+from ..utils.QLearnUtils import QUtils, NormalizationParams
 
-from .QRasterNumpy import *
+from ..utils.QRasterNumpy import *
 
 
 # class used by PyTorch DataLoader

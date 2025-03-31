@@ -35,7 +35,7 @@ import sys
 import inspect
 
 from qgis.core import QgsProcessingAlgorithm, QgsApplication
-from .QLearn_provider import QLearnProvider
+from .src.QLearn_provider import QLearnProvider
 
 cmd_folder = os.path.split(inspect.getfile(inspect.currentframe()))[0]
 

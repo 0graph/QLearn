@@ -2,8 +2,6 @@
 # Source: https://github.com/qgis/QGIS/blob/master/python/PyQt6/core/__init__.py.in#L544
 import typing as _typing
 
-from qgis.PyQt.QtCore import NULL
-from qgis.PyQt.QtCore import Qt as _Qt
 from qgis._core import *
 
 try:
