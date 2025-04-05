@@ -1,5 +1,5 @@
 import torch
-from qgis.core import QgsProcessingFeedback, QgsRasterLayer, QgsProcessingContext, QgsRectangle, QgsRasterBlock, Qgis, QgsRasterDataProvider, QgsDataSourceUri, QgsError
+from qgis.core import QgsProcessingFeedback, QgsRasterLayer, QgsProcessingContext, QgsRasterMinMaxOrigin, QgsContrastEnhancement, QgsContrastEnhancementFunction, QgsRectangle, QgsRasterBlock, Qgis, QgsRasterDataProvider, QgsDataSourceUri, QgsError
 from ..utils.QLearnUtils import QUtils
 from ..model.QLearnUNet import *
 import numpy as np
@@ -203,6 +203,8 @@ class QNNPredictor:
 
         provider = out_raster.dataProvider()
 
+        
+
         # Debug Statements
         #self.feedback.pushInfo(f"Provider URI: {provider.dataSourceUri()} Raster SRC: {out_raster.source()} Provider Bands: {provider.bandCount()} band1desc:{provider.bandDescription(1)}")
         #self.feedback.pushInfo(f"DataShape: {data.shape.__str__()} RasterShape: ({provider.xSize()},{provider.ySize()})")
@@ -226,6 +228,7 @@ class QNNPredictor:
             self.feedback.pushInfo("ERROR: Cannot write raster data, write operation failed")
             return False
         
+        # Calculate band statistics
         provider.setEditable(False)
 
         return True

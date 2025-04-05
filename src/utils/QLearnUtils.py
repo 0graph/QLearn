@@ -138,10 +138,6 @@ class QUtils:
         if not aligned_training.isValid() or not aligned_target.isValid():
             feedback.reportError("Error: Failed to load aligned rasters.")
             return None, None
-
-        # Save to file so rasters dont exceeed memory capacity
-        #QUtils.setRasterDestination(aligned_training, training_aligned_filename,feedback,context)
-        #QUtils.setRasterDestination(aligned_target,target_aligned_filename,feedback,context)
         
         return training_aligned_filename, target_aligned_filename
     

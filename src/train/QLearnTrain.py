@@ -74,7 +74,8 @@ class QUNetTrainer:
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau( 
             self.optimizer, mode='min', factor=0.1, patience=4,min_lr=1e-6)
         # CrossEntropyLosss if Classification, MSELoss otherwise
-        self.criterion = (nn.CrossEntropyLoss(weight=self.class_weight,ignore_index=self.NODATA_class_mapping) 
+        class_weights = torch.tensor(self.class_weight) if self.class_weight is not None else None
+        self.criterion = (nn.CrossEntropyLoss(weight=class_weights,ignore_index=self.NODATA_class_mapping) 
                 if self.task == "classification" else nn.MSELoss())
         self.feedback.pushInfo(f"ignore Index: {self.NODATA_class_mapping}")
 
