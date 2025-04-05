@@ -1,0 +1,10 @@
+.wy-nav-content {
+    max-width: 70%; /* Expand the content width */
+    margin: 0 auto; /* Center the content */
+}
+
+/* Enable word wrapping for table cells */
+.wy-table-responsive table td, 
+.wy-table-responsive table th {
+    white-space: normal; /* Allow text to wrap */
+}

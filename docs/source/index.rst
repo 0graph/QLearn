@@ -36,6 +36,8 @@ Requirements
    settings
    faq
    examples
+   about
+   features
 
 Indices and tables
 ==================

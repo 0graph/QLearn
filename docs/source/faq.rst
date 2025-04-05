@@ -38,12 +38,12 @@ Troubleshooting
 
 Tips and Tricks
 ----------------
-* Use the `--rescale` flag to downscale your input data. This can significantly speed up training time.
+* Use the ``--rescale`` flag to downscale your input data. This can significantly speed up training time.
 * Experiment with different model depths and channel sizes to find the best configuration for your data.
-* Use the `--chunk_size` flag to adjust the size of the image chunks used for training. Smaller chunks can help with memory management but may slow down training.
+* Use the ``--chunk_size`` flag to adjust the size of the image chunks used for training. Smaller chunks can help with memory management but may slow down training.
    * Note: chunk sizes also affect the context window of the model. Smaller chunks may lead to less context being available for the model to learn from, which can change the results.
-* Use the `--normalize_targets` flag to normalize your target values. This can help with training stability and convergence.
-* Use the `--batch_size` flag to adjust the batch size used during training. Larger batch sizes can speed up training but may require more memory.
+* Use the ``--normalize_targets`` flag to normalize your target values (regression only). This can help with training stability and convergence.
+* Use the ``--batch_size`` flag to adjust the batch size used during training. Larger batch sizes can speed up training but may require more memory.
 
 
 
