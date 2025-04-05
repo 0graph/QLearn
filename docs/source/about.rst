@@ -34,13 +34,15 @@ Steps denoted with a * are optional and based on the settings chosen by the user
    :width: 600px
    :align: center
 
-1. **Alignment & Rescaling:** When working with raster-based training data, it is important to ensure that the input data is aligned with the target data.
+1. **Alignment & Rescaling:** 
+    When working with raster-based training data, it is important to ensure that the input data is aligned with the target data.
     With geospatial data, this means that the rasters must have the same coordinate reference system (CRS), pixel size, and extent.
     QLearn will automatically align the input data to the target data, and rescale the target data to match the input data.
     Additionally, as QgsAlignRasters provides the ability to rescale the data, any user specified rescaling will be done in this step.
     This step simplifies the time consuming process of alignment and rescaling, making it easier to prepare the data for training.
 
-2. **Calculating Chunks:** The next step is to calculate the chunks of data that will be used for training. 
+2. **Calculating Chunks:** 
+    The next step is to calculate the chunks of data that will be used for training. 
     This is done by dividing the input data into smaller chunks of a specified size. 
     This is important for training neural networks, as it allows the model to learn from smaller portions of the data at a time, 
     which can help with convergence and stability during training. 
@@ -51,7 +53,8 @@ Steps denoted with a * are optional and based on the settings chosen by the user
 Target (mask) Raster Processing
 ...............................
 
-3. **(Classification Only) Calculate Class Mappings:** Sometimes when working with classification data, the classes may not be continuous from 0 to N, 
+1. **(Classification Only) Calculate Class Mappings:** 
+    Sometimes when working with classification data, the classes may not be continuous from 0 to N, 
     which is a requirement for the loss function used by QLearn (CrossEntropyLoss).
     In this case, the classes will automatically be reclassified to be continuous from 0 to N + 1, 
     where N is the number of classes in the input data +1 for the NODATA class.
@@ -59,24 +62,84 @@ Target (mask) Raster Processing
 Input & Target Raster Processing
 .................................
 
-4. **Calculate Normalization Parameters:** The next step is to calculate the normalization parameters per-band for the input data. 
+1. **Calculate Normalization Parameters:** 
+    The next step is to calculate the normalization parameters per-band for the input data. 
     This step is important for training neural networks, as it helps to stabilize the training process and improve convergence.
     The user can also specify whether or not to normalize the input data.
     Normalization is done using `Welford's Online Algorithm <https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance>`_ 
     as the possibility of retraining and the large size of the data makes it impractical to calculate the mean and standard deviation in a single pass.
 
-5. **(Optional) Normalization & Reclassification:** Based on the user settings, the input and target data will be normalized based on the previous calculations.
+2. **(Optional) Normalization & Reclassification:** 
+    Based on the user settings, the input and target data will be normalized based on the previous calculations.
     Additionally, the target data will be reclassified based on the calculated class mappings
     Normalization is done using sigmoid normalization as the possibility of data outside the previously calculated min/max values during retraining 
     makes it impractical to use min-max normalization. This means that newly encountered data will not be lost during retraining.
     The user can also specify whether or not to normalize the input and target data.
 
-6. **Saving:** The final step in the preprocessing workflow is to split the processed rasters into chunks and save them to disk.
+3. **Saving:** 
+    The final step in the preprocessing workflow is to split the processed rasters into chunks and save them to disk.
     This is important as GIS datasets are often too large to fit into memory all at once, 
     and preprocessing and saving the data avoids having to normalize and reclassify the data again during training.
 
-Training
-^^^^^^^^^^
 
+The Model
+^^^^^^^^^
+
+QLearn uses a UNet architecture for training and prediction.
+The UNet architecture is a convolutional neural network (CNN) that is widely used for image segmentation tasks.
+Additionally, it is already widely used for various types of classification and segmentation in the GIS field[9], 
+making it a good choice for this plugin.
+
+Unlike a traditional neural network, QLearn's UNet architecture is modular, allowing it to be used with any number of channlels or input image size.
+Additionally, the depth, and number of channels in the network can be customized by the user to suit their needs.
+This results in a flexible model that can be compacted for quick training and inference, or expanded for more complex tasks.
+
+The implementation used for QLearn's UNet model was a modified version of the implementation found in the blog post 
+`U-Net A PyTorch Implementation in 60 lines of Code <https://amaarora.github.io/posts/2020-09-13-unet.html>`_, written by Aman Arora.
+I suggest checking out the post for a more in-depth explanation of the UNet architecture and how it works.
+
+Training
+^^^^^^^^
+
+.. image:: _static/training-chart.svg
+   :alt: A flowchart showing the training steps for QLearn. Includes steps for loading the data, training the model, and saving the model.
+   :width: 600px
+   :align: center
+
+1. **Initialization:**
+    The first step in the training process is to initialize the model. 
+    This includes creating the model, setting the optimizer, loss function, and learning rate scheduler. As well as creating the training and validation datasets.
+    The parameters for the model are set based on the user settings, and depend on the type of task being performed (classification or regression).
+
+
+Training Loop
+.............
+
+2. **Training and Evaluation:**
+    The next step is to train the model. 
+    This is done by iterating over the training dataset and updating the model weights based on the loss function.
+    The training loop will run for a specified number of epochs, and will evaluate the model on the validation dataset after each epoch.
+
+3. **Checking Conditions:**
+    During the training loop, the model will check for the following conditions:
+    - If the validation loss has not improved for a specified number of epochs (patience), the training will stop.
+    - If the validation loss has improved, the model will save the current best model weights (depending on save mode).
+    - If the number of epochs has been reached, the training will stop.
+
+Other Steps
+...........
+
+4. **Saving the Model:**
+    After the training loop has completed, the model will save the final model weights to disk. 
+    In addition to the model weights, the model saves many additional parameters to disk to assist with retraining and prediction.
+    This includes the normalization parameters, class mappings, optimizer/scheduler states, and model architecture.
+    Although this does make it more difficult to load the model in other frameworks,
+    it allows for a more seamless experience when retraining and making predictions.
+
+5. **Testing the Model:**
+    After the training loop has completed, the model will be tested agains the testing dataset, 
+    and the accuracy and loss statistics will be displayed.
+    This is important for understanding how well the model performs on unseen data,
+    and can help to identify any issues with the model or the training process.
 
 
