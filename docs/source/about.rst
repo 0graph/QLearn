@@ -102,7 +102,7 @@ Training
 ^^^^^^^^
 
 .. image:: _static/training-chart.svg
-   :alt: A flowchart showing the training steps for QLearn. Includes steps for loading the data, training the model, and saving the model.
+   :alt: A flowchart showing the training process for QLearn. Includes steps for loading the data, training the model, and saving the model.
    :width: 600px
    :align: center
 
@@ -143,3 +143,30 @@ Other Steps
     and can help to identify any issues with the model or the training process.
 
 
+Prediction
+^^^^^^^^^^
+
+.. image:: _static/prediction-chart.svg
+   :alt: A flowchart showing the prediction process for QLearn. Includes steps for preprocessing the data, making predictions, and saving the results.
+   :width: 600px
+   :align: center
+
+1. **Initialization:**
+    The first step in the prediction process is to initialize the predictor. 
+    This includes loading the model weights, normalization parameters, and class mappings from disk.
+    The parameters for the model are set based on the user settings, and depend on the type of task being performed (classification or regression).
+
+2. **Preprocessing:**
+    In order for predictions to be accurate, the input data must be preprocessed in the same way as the training data.
+    This includes normalizing the input image based on the saved normalization parameters, and splitting the input image into chunks.
+
+3. **Making Predictions:**
+    The next step is to make predictions using the model. 
+    This is done by iterating over the input dataset and passing each chunk through the model.
+    The model will output a probability map for each class, which can be thresholded to create a binary mask for each class (in the case of classification).
+
+4. **Postprocessing:**
+    After the predictions have been made, the model will postprocess the output data. 
+    This includes denormalizing the output data based on the saved normalization parameters (if regression), 
+    or reclassifying the output data based on the saved class mappings (if classification).
+    The output data will be saved as a GeoTIFF file, which can be easily opened in QGIS or other GIS software.
