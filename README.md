@@ -4,6 +4,10 @@
 
 **QLearn** is a QGIS plugin that allows you to train a UNet based neural network for classification and regression of raster data. 
 
+## Documentation
+
+Full documentation is available at [https://qlearn.readthedocs.io/](https://qlearn.readthedocs.io/).
+
 ## Key Features
 
 * **QGIS Integration**: Train and use machine learning models without leaving QGIS
@@ -48,10 +52,6 @@ It is suggested that you install QGIS through the OSGeo4W installer, as it simpl
 * Python with torch and torchvision packages
 * OsGeo4W (Recommended)
 * Windows 10+ (Linux and MacOS are untested but may work)
-
-## Documentation
-
-Full documentation is available at [ReadTheDocs](https://qlearn.readthedocs.io/).
 
 ## Support
 
