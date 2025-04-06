@@ -28,6 +28,12 @@ Requirements
 * OsGeo4w (Reccomended)
 * Windows 10+ (Linux and MacOS are untested but may work)
 
+.. image:: _static/training_menu.png
+   :alt: QLearn Prediction Menu
+
+.. image:: _static/prediction_menu.png
+   :alt: QLearn Prediction Menu
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
@@ -37,7 +43,6 @@ Requirements
    faq
    examples
    about
-   features
 
 Indices and tables
 ==================

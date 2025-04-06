@@ -1,6 +1,9 @@
 Settings & Features
 ===================
 
+.. image:: _static/training_menu.png
+   :alt: QLearn Prediction Menu
+
 Basic Training Parameters
 -------------------------
 
@@ -137,6 +140,10 @@ Advanced Options
      - Enable performance profiling during training. Results will be saved to plugins/QLearn/profile_results
      - False
      - --profile, -p
+
+
+.. image:: _static/prediction_menu.png
+   :alt: QLearn Prediction Menu
 
 Prediction Parameters
 ----------------------

@@ -20,6 +20,25 @@ can be done without the need for code or external tools.
 Advantages of this approach include simplifying and speeding up analysis workflows, 
 and improving the accessibility of neural network training.
 
+Features
+--------
+* Automatic Alignment and Rescaling
+    - QLearn automatically aligns input and target rasters to ensure traning is accurate
+    - QLearn can also rescale the input and target rasters to reduce the detail of the data as specified by the user
+* Automatic Normalization
+    - QLearn can automatically normalize input and target rasters to improve training stability
+    - If target normalization is selected, QLearn will automatically denormalize the output rasters after prediction
+* Testing and Validation
+    - QLearn automatically splits the input data into training, and validation datasets which are used to evaluate the model during training.
+    - QLearn can also use a separate testing dataset to evaluate the model after training.
+* Confidence Levels
+    - QLearn can filter out predictions that are below a specified confidence level.
+    - This is useful for ensuring that the model only makes predictions when it is confident in its output.
+* Multiband Support
+    - QLearn can train models on any number of input bands, and any number of output classes.
+    - This allows for a wide range of applications, from simple binary classification to complex multi-class segmentation tasks.
+
+
 Methods
 -------
 
