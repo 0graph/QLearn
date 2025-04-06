@@ -14,7 +14,7 @@ It is suggested that you install QGIS through the OSGeo4W installer, as it simpl
 
 
 1. Open OSGeo4w Shell
-2. Install the necessary dependencies using the following command: `pip3 install torch torchvision`
+2. Install the necessary dependencies using the following command: ``pip3 install torch torchvision``
 3. Open QGIS and navigate to the Plugins menu.
 4. Select Manage and Install Plugins.
 5. Search for QLearn and click Install Plugin.

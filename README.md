@@ -1,73 +1,64 @@
-# QLearn
-A QGIS Plugin allowing for neural network model training and prediction using the UNet Architecture
+# QLearn - Neural Network Training for QGIS
 
-### Dependencies
-- Torch, TorchVision
-  - Close QGIS and open the OSGeo4W shell
-    - If you did not install QGIS using OSGeo4W it is reccomended you reinstall with OSGeo4W
-  - Run `pip3 install torch torchvision`
-  - Once installed the plugin should be able to run
+![QLearn Logo](_static/logo.png)
+
+**QLearn** is a QGIS plugin that allows you to train a UNet based neural network for classification and regression of raster data. 
+
+## Key Features
+
+* **QGIS Integration**: Train and use machine learning models without leaving QGIS
+* **Automatic Data Preprocessing**: Automatic alignment, rescaling, reclassifying, and normalization of rasters
+* **Testing and Validation**: Automatically splits datasets into training and evaluation sets and provides model evaluation metrics
+* **Confidence Filtering**: Optional filtering of predictions based on confidence levels
+* **Multiband Support**: Works with any number of input bands and output classes
+
+## Installation
+
+It is suggested that you install QGIS through the OSGeo4W installer, as it simplifies the installation process. You can download it from the 
+[OSGeo4W Website](https://trac.osgeo.org/osgeo4w/)
+
+1. Open OSGeo4w Shell
+2. Install the necessary dependencies using the following command: `pip3 install torch torchvision`
+  * Note: if you did not install QGIS through OSGeo4W installer you may need to manually install torch and torchvision to QGIS's python directory.
+3. Open QGIS and navigate to the Plugins menu.
+4. Select Manage and Install Plugins.
+5. Search for QLearn and click Install Plugin.
+6. Restart QGIS to complete the installation.
+7. After restarting, you should see the QLearn plugin in the Processing Toolbox.
+
+## Basic Usage
 
 ### Training
-- **Inputs:**
-  - The inputs must partially overlap as only the overlapping sections will be used for training
-  - Training Raster - An n-band raster (the independent variable)
-  - Target Raster - A singleband raster (the dependent variable) -> the wanted class or output value based on the input
-- **Outputs:** A trained pytorch model
+1. In QGIS, go to Processing Toolbox → QLearn → Training → QLearnTrain
+2. Select input/target raster pairs
+3. Choose training type (classification or Regression)
+4. Set the output model location
+5. Click Run to start training
 
 ### Prediction
-- **Inputs:**
-  - Model - A trained pytorch model
-  - Raster - An n-band raster that you want output values predicted for
-- **Outputs:** A raster of predicted values for the input raster based on the trained model.
-: 
+1. In QGIS, go to Processing Toolbox → QLearn → Prediction → QLearnPredict
+2. Select the input raster for prediction
+3. Choose your trained model (.pth file)
+4. (optional) Set the output location
+5. Click Run to generate predictions
 
-### Issues
-- `QLearnTrainingAlgorithm:`
-  - Dosent have an easy interface for selecting a pair of input and targets rasters, just two seperate lists
-- `Multithreading:` multithreading causes issues with training -> find workaround to allow multithreading.
-  - could temporarily save numpy arrays to disk instead of using images directly
-- `Retraining:` if retraining is done, certain values need to be updated
-  - *class mappings:* 
-    - for training classification the class mappings may need to be expanded
-      - this should be able to be done after QDataset is initialized 
-    - for prediction classes may should be unmapped back to thier original values
-- `Type Conversions:` check if there is any issues with classes when converting or comparing floats and fix using a tolerance
-- `Prediction Output Display:` fix prediction outputs defaulting to min and max of 0 for displaying values
-- `Classification NODATA outputs:` seems like partial chunks have a very high possibility of bad predictions due to nodata remapping
+## Requirements
 
+* QGIS 3.26+ (earlier versions are untested but may work)
+* Python with torch and torchvision packages
+* OsGeo4W (Recommended)
+* Windows 10+ (Linux and MacOS are untested but may work)
 
-#### Testing Needed
-- `Invalid Values:` Test raster with invalid/NaN values
-- `Regression:` Is retraining working for regression
-- `NODATA:` 
-  - is training rasters with NODATA valuess working properly?
-- `Confidence Levels:` Are confidence levels for predict functioning as expected
+## Documentation
+
+Full documentation is available at [ReadTheDocs](https://qlearn.readthedocs.io/).
+
+## Support
+
+If you encounter issues or have questions:
+
+* Check the [FAQ](https://qlearn.readthedocs.io/en/latest/faq.html)
+* Report bugs on the [Issue Tracker](https://github.com/0graph/QLearn/issues)
+* Visit the [QLearn Plugin Page](https://plugins.qgis.org/plugins/qlearn/) (coming soon)
 
 
-#### Features
-- `Save Best Model:` To avoid overfitting, after a certain amount of time without improvement the best model can be saved
-
-### Refactoring
-- Move WriteRasterData from QLearnPredict to QLearnUtils
-- Possibly make read-chunk in QLearnDataset to be like the one in QLearnPredict -> assumed that train and target rasters have exact same extent/pixel size/dimensions which they should
-  - could even combine them into one
-
-  #### **QLearnDataset Initalization:** lots of repeted array creation and dataset looping that could be fixed
-  ```
-  # Proposed Strucutre:
-
-  loop (training & target):
-    Align()
-    CalcChunks()
-    AdjustClassMapping()
-    GetRasterData()
-    CalcNormalizationParams()
-
-    loop (chunks):
-      preprocessAndSave() ->
-        Normalize()
-        Remap()
-        Save()
-
-  ```
