@@ -6,7 +6,7 @@
 name=QLearn
 qgisMinimumVersion=3.26.2
 description=QLearn preforms automatic training of a neural network model on raster data
-version=0.5
+version=1.0
 author=Adam B
 email=adam{at}ardanika{dot}com
 
@@ -25,7 +25,7 @@ hasProcessingProvider=yes
 # Tags are comma separated with spaces allowed
 tags=analysis,processing,raster,neural network,classification,segmentation,training
 
-homepage=https://github.com/0graph/QLearn/wiki
+homepage=https://qlearn.readthedocs.io/en/latest/index.html
 category=Analysis
 icon=icon.png
 # experimental flag
