@@ -24,12 +24,11 @@ It is suggested that you install QGIS through the OSGeo4W installer, as it simpl
 Basic Training Workflow
 -----------------------
 This section will guide you through the basic workflow of training a classification model using QLearn.
+For a more in-depth tutorial, follow along with `one of the Examples <https://qlearn.readthedocs.io/en/latest/examples.html>`_.
 
 **Training**
 
 1. **Prepare Your Data**: Ensure your raster data is in a format supported by QGIS (e.g. GeoTIFF). You will also need a corresponding mask file for training.
-   
-   - I reccommend the `LandCover.ai Dataset <https://landcover.ai.linuxpolska.com/>`_ as a good starting point for training.
 2. **Open the Training Plugin**: In QGIS, go to the Processing Toolbox and navigate to QLearn > Training > QLearnTrain
 3. **Select Your Data**: Choose the input raster and mask files (I suggest choosing 1 pair to start).
 4. **Configure Training Parameters**: Set the training type to 'classification' and select an output model location
@@ -44,9 +43,5 @@ This section will guide you through the basic workflow of training a classificat
 5. **Start Prediction**: Click the Run button to start the prediction process. The predicted raster will be saved to the specified location.
 
 Once the prediction has completed, the predicted raster will be added to your QGIS project. You can visualize the results using the QGIS styling options.
-
-**Note:** if the output raster has a minimum and maximum of 0, go into the symbology tab and recalculate the min/max values using the 'exact' method.
-You can also remove the raster from the project, delete the associated .aux.xml file, and re-add the raster to the project. This will force QGIS to recalculate the min/max values.
-This is a known issue with the plugin, and will be fixed in a future release.
 
 

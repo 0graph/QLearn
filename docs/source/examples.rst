@@ -74,6 +74,7 @@ Depending on the dataset you are using, you may not need to convert it to a rast
     
     - Input Layer: Select the Ontario Hydro Network vector layer.
     - Fixed value to burn in: **1**
+
     - Output raster size units: Pixels
         - Note: in certain versions of QGIS this option is broken. Use Georeferenced units with 0.0001 instead.
     - Output raster size: same as the merged raster (10 for Sentinel-2).

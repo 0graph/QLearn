@@ -9,6 +9,9 @@ QLearn - Neural Network Training for QGIS
 
 **QLearn** is a QGIS plugin that allows you to train a UNet segmentation neural network architecture to segment and classify raster data. It can also use pretrained models to make predictions on raster data.
 
+`GitHub Repo <https://github.com/0graph/QLearn>`_
+`QGIS Plugin Repository <https://plugins.qgis.org/plugins/QLearn/>`_
+
 Key Features
 -----------
 
