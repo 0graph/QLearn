@@ -7,6 +7,7 @@ Example 1: Water Classification
 **Description:**
 
 This example demonstrates how to use QLearn to detect and classify water bodies in a raster image.
+
 - Learn how to convert vector data to a raster mask
 - Learn how to obtain sattelite imagery from directly within QGIS
 - Learn how to train a model using the QLearn plugin
@@ -20,7 +21,7 @@ This example demonstrates how to use QLearn to detect and classify water bodies 
 **Time Required:**
 
 - 10-20 minutes to gather data
-- 15-60 minutes to train the model (depending on the size of the dataset and your computer's performance)
+- 30-120 minutes to train the model (depending on the size of the dataset and your computer's performance)
 - 1-10 minutes to make predictions (depending on the size of the image and your computer's performance)
 
 Gathering The Data (Using STAC API Browser)
@@ -30,14 +31,16 @@ Gathering The Data (Using STAC API Browser)
 2. Download your preferred Waterbody Vector Dataset (e.g. Ontario Hydro Network) and add it to your QGIS project.
 3. Open the plugins menu and select Manage and Install Plugins.
 4. Search for "STAC API Browser" and "QLearn" and install them.
+
    - Note: QLearn requires the installation of additional dependencies. `Follow the steps here to install <https://qlearn.readthedocs.io/en/latest/tutorial.html>`_.
 5. Open the STAC API Browser plugin and search for "Sentinel-2" or "Landsat 8" to find satellite imagery. Alternatively you can use your own raster data and skip to step 10.
 6. Add a filter for cloud cover (<1%) and the desired extent of the search, then click "Search".
+
    - Ensure that the extent of the search area is within the area covered by the waterbody dataset.
 
 .. image:: _static/stac-filters.png
    :alt: STAC API Browser Filters.
-   :width: 400px
+   :width: 600px
 
 7. Choose one or more desired images from the results list and click "View Assets".
 8. Select the desired bands (I suggest using B2, B3, B4, and B8 for Sentinel-2) and click "Download the assets".
@@ -51,7 +54,7 @@ If your satellite imagery is already in a single file, you can skip this section
 
 .. image:: _static/merge_rasters.png
    :alt: QGIS Merge Rasters tool dialog.
-   :width: 400px
+   :width: 600px
 
 10.  Navigate to the Raster menu and select Miscellaneous > Merge.
 11.  In the Merge dialog, select the bands you want to merge (e.g. B2, B3, B4, and B8) and choose an output file name.
@@ -59,7 +62,7 @@ If your satellite imagery is already in a single file, you can skip this section
 
 .. image:: _static/merged_raster.png
    :alt: Merged Raster Result.
-   :width: 400px
+   :width: 600px
 
 Converting a Vector Dataset to a Raster Mask
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -68,6 +71,7 @@ The Ontario Hydro Network dataset is a vector dataset, containing different type
 Depending on the dataset you are using, you may not need to convert it to a raster mask or perform filtering.
 
 13. Navigate to the Raster menu and select Conversion > Rasterize (Vector to Raster).
+    
     - Input Layer: Select the Ontario Hydro Network vector layer.
     - Fixed value to burn in: **1**
     - Output raster size units: Pixels
@@ -76,6 +80,7 @@ Depending on the dataset you are using, you may not need to convert it to a rast
     - Output extent: If using multiple rasters, ignore this or set the extent to include all the rasters. Otherwise, set it to the extent of the merged raster.
     - Output file: Choose a location to save the raster mask.
     - Advanced Parameters: 
+  
         - Pre-initialze the raster with fixed values: **0**
 14. Click "Run" to create the raster mask.
 15. Navigate to Processing Toolbox > Raster Tools > Fill NoData Cells
@@ -83,16 +88,27 @@ Depending on the dataset you are using, you may not need to convert it to a rast
 
 Training the Model
 ^^^^^^^^^^^^^^^^^^
+.. image:: _static/example1_training_menu.png
+   :alt: QGIS Training Progress.
+   :width: 600px
 
 17. Navigate to Processing Toolbox > QLearn > Training > QLearnTrain
 18. Select the merged raster as the input raster and the raster mask as the target.
+    
     - If you have multiple pairs of rasters, you can add them one by one. 
 19. Set the training type to "Classification" and select the output model location.
 20. Set the number of epochs to 10 and the learning rate to 0.001.
+    
     - If you want a better model you can increase the number of epochs to 50 or more, but this will take longer.
+    - Tip: for faster training, use the flags ``--depth 3`` and ``--channels 32``. This will reduce the complexity of the model but waterbody classification is simple enough that it should work well.
 21. Start the training process by clicking the "Run" button.
 22. Monitor the training progress in the log window. This could take a while depending on the size of the dataset and your computer's performance.
+    
     - Once the training is complete, the trained model will be saved to the specified location.
+
+.. image:: _static/training_log.png
+   :alt: QGIS Training Result.
+   :width: 600px
 
 Prediction with a trained model
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -102,5 +118,41 @@ but you can also use the same image you trained on.
 I also suggest clipping the image to be much smaller as prediction can take a while depending on the size of the image and your computer's performance.
 You can do this using the "Clip Raster by Extent" tool in QGIS.
 
-23. Navigate to Processing Toolbox > QLearn > Prediction > QLearnPredict
-24. 
+1.  Navigate to Processing Toolbox > QLearn > Prediction > QLearnPredict
+2.  Select the input raster file you want to predict on, and the model you just trained.
+3.  Set the output location for the predicted raster.
+4.  Click the "Run" button to start the prediction process.
+5.  Once the prediction is complete, the predicted raster will be added to your QGIS project.
+
+Results
+^^^^^^^
+
+.. list-table::
+   :widths: 50 50
+   :header-rows: 0
+
+   * - .. image:: _static/water_class_prediction.png
+          :alt: QGIS Prediction Result
+          :width: 100%
+     - .. image:: _static/water_class_sat.png
+          :alt: Satellite Image
+          :width: 100%
+
+After 1 hour of training, on approx. 600 chunks, the model was able to achieve a validation accuracy of 98.66%.
+Additionally, the model was tested on completely unseen data and was able to achieve an accuracy of 98.43%.
+Shown in the above image is a combination of the predicted classification, vs. the original classification mask.
+As you can see, the model was able to accuratly classify the larger waterbodies, but struggled with small islands & waterbodies, 
+as well as certain types of waterbodies like swamps.
+Examining some of the green interior pixels, we can see that the model correctly identified them as water even though they are not part of the Ontario Hydro Network dataset.
+
+.. list-table::
+   :widths: 50 50
+   :header-rows: 0
+
+   * - .. image:: _static/water_class_prediction_small.png
+          :alt: QGIS Prediction Result
+          :width: 100%
+     - .. image:: _static/water_class_sat_small.png
+          :alt: Satellite Image
+          :width: 100%
+

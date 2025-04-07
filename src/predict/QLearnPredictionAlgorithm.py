@@ -68,6 +68,7 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
     INPUT_RASTER = 'INPUT_RASTER'
     ARGS_CONF = 'ARGS_CONF' # minimum confidence level
     OUTPUT_RASTER = 'OUTPUT_PREDICTED_RASTER'
+    ARGS_OVERLAP = 'ARGS_OVERLAP' # number of pixels to overlap chunks
 
     def initAlgorithm(self, config):
         """
@@ -96,7 +97,20 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
                 self.tr("Minimum Confidence level for predicted value (otherwise overwrite with NODATA)"),
                 defaultValue=0.0,
                 minValue=0.0,
-                maxValue=1.0
+                maxValue=1.0,
+                type=QgsProcessingParameterNumber.Double,
+                optional=True,
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.ARGS_OVERLAP,
+                self.tr("Overlap between chunks to prevent edge artifacts"),
+                defaultValue=8,
+                minValue=0,
+                type=QgsProcessingParameterNumber.Integer,
+                optional=True,
             )
         )
 
@@ -117,11 +131,12 @@ class QLearnPredictionAlgorithm(QgsProcessingAlgorithm):
         iModel = self.parameterAsFile(parameters,self.INPUT_MODEL,context)
         oRaster = self.parameterAsOutputLayer(parameters,self.OUTPUT_RASTER,context)
         confidence = self.parameterAsDouble(parameters,self.ARGS_CONF, context)
+        overlap = self.parameterAsInt(parameters,self.ARGS_OVERLAP, context)
 
 
         args = {
             "CONFIDENCE": confidence,
-            "OVERLAP": 8 # number of pixels to overlap chunks
+            "OVERLAP": overlap # number of pixels to overlap chunks
         }
 
         feedback.pushInfo(f"Args: {args}")
